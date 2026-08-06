@@ -75,6 +75,22 @@ possible DOM seam in live Roam before adopting it. If current documentation
 conflicts with observed behavior, record the conflict and test the installed
 Roam client rather than silently choosing one.
 
+## Roam-provided frontend libraries
+
+Roam currently ships React 18.2.0 and the matching React DOM globals, plus
+Blueprint Core, Select, and DateTime and several other synchronous and lazy
+libraries. Treat these as Roam-provided libraries, not as packages to bundle
+again by default.
+
+Before adding or upgrading a frontend dependency, read the current
+[Available Libraries](https://roamdocs.fyi/developer-documentation/available-libraries)
+page. It is the authoritative list of package versions, window globals, and
+lazy-loading expectations. In particular, use `window.React`,
+`window.ReactDOM`, `window.ReactDOMClient`, and the applicable
+`window.Blueprint` exports when the documented Roam extension surface makes
+them available. Keep bundler externals aligned with that current list and
+verify the resulting artifact does not contain a second React runtime.
+
 ## Development approach
 
 1. Pass the documentation gate above.
