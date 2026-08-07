@@ -45,7 +45,7 @@ The first configurable slice uses real Roam attributes:
 
 ```text
 {{map}}
-  map/basemap:: satellite
+  map/basemap:: EOX Satellite Context
   map/color:: #2457a6
   map/marker:: [[Port Louis]]
     map/color:: #d9822b
@@ -53,14 +53,13 @@ The first configurable slice uses real Roam attributes:
   [[Curepipe]]
 ```
 
-The whole example above is compatibility spike syntax rather than a settled
-public API.
-`map/basemap` currently accepts only `streets` or `satellite`; `map/color` and
-`map/radius` secretly configure one circle layer; and `map/marker` acts as both
-a page source and a per-occurrence styling scope. Those forms proved that real
-Roam attributes can drive live presentation, including relationship-scoped
-overrides, but they should not duplicate or obscure MapLibre's style, source,
-layer, and expression model.
+`map/basemap` selects a readable name from the graph's basemap catalog. The
+other three options above remain compatibility spike syntax rather than a
+settled public API: `map/color` and `map/radius` secretly configure one circle
+layer, while `map/marker` acts as both a page source and a per-occurrence
+styling scope. Those forms proved that real Roam attributes can drive live
+presentation, including relationship-scoped overrides, but they should not
+duplicate or obscure MapLibre's style, source, layer, and expression model.
 
 The composable path now accepts validated native MapLibre layers over the
 stable GeoJSON source compiled for the map. Arbitrary style URLs and
@@ -81,14 +80,54 @@ compatibility representation. Invalid values appear as local diagnostics and
 fall back to the inherited defaults. Changes use the same pull-watch path as
 source edits, so the map should update without a Roam reload.
 
-The satellite preset is an experiment, not a production-provider decision. It
-uses the same EOxCloudless 2020 raster endpoint as MapLibre's
-[satellite example](https://maplibre.org/maplibre-gl-js/docs/examples/display-a-satellite-map/)
-and provides the required attribution through the MapLibre source. Current
-[EOxCloudless terms](https://cloudless.eox.at/documentation/license) allow
-free non-commercial use with attribution; commercial use requires the
-applicable EOX licence. A production release must not describe this preset as
-unconditionally free.
+### Basemap catalog and provider settings
+
+Liberty remains the default and does not contact an imagery provider. The
+catalog always contains two keyless choices:
+
+- `Liberty` is OpenFreeMap's street-map style. The compatibility values
+  `streets` and `street` resolve to it.
+- `EOX Satellite Context` is the 2016 EOxCloudless Sentinel-2 mosaic. It is a
+  global 10 m context layer, not current building-level photography. The
+  compatibility value `satellite` resolves to it. Its raster source includes
+  visible EOX, Copernicus, year, and CC BY 4.0 attribution and stops requesting
+  new tiles above zoom 14. EOX also rate-limits the free tile service, and its
+  general service terms require a separate use check.
+
+For current higher-resolution imagery, a graph administrator can open
+**Settings → Roam Depot → Roam Map → Basemap providers** and save one
+graph-wide MapTiler browser key. It creates two catalog choices:
+
+```text
+map/basemap:: MapTiler Satellite
+map/basemap:: MapTiler Hybrid
+```
+
+Satellite is imagery only. Hybrid is MapTiler's complete imagery, labels, and
+roads style. The toolbar selector previews any catalog entry without writing
+to Roam; the `map/basemap` attribute is the durable, visible per-map choice.
+A later Mapbox, Esri, or other adapter would get its own provider setting and
+catalog entries, so several different providers can coexist without asking
+users to create duplicate MapTiler accounts.
+
+Roam's documented
+[extension settings](https://roamdocs.fyi/developer-documentation/roam-depot-extension-api)
+are graph-synced and JSON-serializable. A MapTiler key stored there is therefore
+a **public browser key**, not a secret: collaborators may be able to read it,
+and it necessarily appears in browser requests. Restrict the key as MapTiler
+[documents](https://docs.maptiler.com/cloud/api/authentication-key/) and check
+the current [pricing and permitted uses](https://www.maptiler.com/cloud/pricing/).
+Roam Map never writes the key to map blocks, feature properties, status
+objects, or diagnostics, and authenticated URLs are redacted from map errors.
+
+Both providers still enter MapLibre through its ordinary style boundary. EOX
+produces a native [raster source and raster
+layer](https://maplibre.org/maplibre-style-spec/sources/#raster); MapTiler
+produces a MapLibre style URL. After
+[`Map#setStyle`](https://maplibre.org/maplibre-gl-js/docs/API/classes/Map/#setstyle),
+Roam Map restores its compiled feature source, authored layers, fallback
+marker, and runtime images. Source adapters—including the planned native-query
+adapter—never acquire provider or key logic.
 
 ### Native MapLibre layer form
 
@@ -260,7 +299,7 @@ documentation. The build uses those React globals and verifies that it did not
 bundle a second React runtime. MapLibre GL JS 5.24.0 is pinned and bundled once.
 The default basemap is OpenFreeMap's Liberty style, so tiles require network
 access and the renderer keeps provider and OpenStreetMap attribution visible.
-The experimental satellite preset and its licensing boundary are described
+The keyless EOX context view and graph-configured MapTiler choices are described
 above.
 
 The `{{map}}` mounting adapter is intentionally isolated in one module because

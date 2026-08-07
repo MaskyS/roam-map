@@ -43,9 +43,27 @@ language.
 
 Map resources follow the same native boundary. A style option should accept a
 MapLibre style URL or a reference to a reusable MapLibre style specification,
-while separate source and layer definitions remain possible. The current
-`streets|satellite` switch is useful spike code, not the intended composition
-boundary.
+while separate source and layer definitions remain possible. The implemented
+basemap catalog is a convenience at that boundary, not a second style
+language: a readable per-map name resolves to an ordinary MapLibre style URL
+or style specification.
+
+Provider credentials belong in graph-synced extension settings rather than
+Roam blocks. One versioned settings object is keyed by provider. The MapTiler
+entry stores one public browser key for the graph and contributes two catalog
+entries, Satellite and Hybrid. Future Mapbox, Esri, or other entries can
+coexist beside it; configuring the same provider several times is not the
+ordinary use case. The selected catalog name remains in the outline as
+`map/basemap`, where it is visible and portable within the graph. Provider
+adapters own URL and authentication details; the MapLibre runtime receives
+only a style plus a change fingerprint. Public catalog and status values never
+contain the key, and map errors redact authenticated URLs.
+
+Liberty and EOX Satellite Context implement the same catalog-entry contract as
+configured MapTiler styles. That common contract is the extension seam: another
+provider can add entries without changing source compilation, feature
+projection, layers, images, or the map view. Arbitrary authored style URLs and
+reusable full style specifications remain separate advanced work.
 
 For ordinary point styling, use a native MapLibre layer rather than introducing
 parallel `map/marker-shape` and `map/marker-size` vocabularies. A circle's shape

@@ -1,9 +1,11 @@
 import { createLiveMapSession } from "./live-map-session.js";
 import { createImageAssetLoader } from "./image-assets.js";
+import { createBasemapRegistry, safeBasemapError } from "./basemaps.js";
 import { FEATURE_PROPERTIES } from "./map-contract.js";
 import { createInlineMapRuntime } from "./map-runtime.js";
 
 const React = window.React;
+const BUILT_IN_BASEMAPS = createBasemapRegistry();
 
 function stopRoamMouseDown(event) {
   event.stopPropagation();
@@ -49,7 +51,14 @@ function DiagnosticList({ diagnostics, api }) {
   );
 }
 
-export function MapView({ definitionUid, hostUid, mountId, api, compiler }) {
+export function MapView({
+  definitionUid,
+  hostUid,
+  mountId,
+  api,
+  basemaps = BUILT_IN_BASEMAPS,
+  compiler,
+}) {
   const containerRef = React.useRef(null);
   const mapRuntimeRef = React.useRef(null);
   const sessionRef = React.useRef(null);
@@ -58,9 +67,33 @@ export function MapView({ definitionUid, hostUid, mountId, api, compiler }) {
   const [phase, setPhase] = React.useState("loading");
   const [error, setError] = React.useState(null);
   const [mapError, setMapError] = React.useState(null);
+  const [basemapStatus, setBasemapStatus] = React.useState(() =>
+    basemaps.describe("streets"),
+  );
+  const [basemapOverride, setBasemapOverride] = React.useState(null);
+  const [basemapRevision, setBasemapRevision] = React.useState(basemaps.revision);
   const [assetDiagnostics, setAssetDiagnostics] = React.useState([]);
   const [selected, setSelected] = React.useState(null);
   const [watchWarning, setWatchWarning] = React.useState(null);
+  const configuredBasemap = result?.presentation?.basemap ?? "streets";
+  const requestedBasemap = basemapOverride ?? configuredBasemap;
+  const basemapOptions = React.useMemo(
+    () => basemaps.list(),
+    [basemaps, basemapRevision],
+  );
+
+  React.useEffect(
+    () => basemaps.subscribe((revision) => setBasemapRevision(revision)),
+    [basemaps],
+  );
+
+  const previousConfiguredBasemap = React.useRef(configuredBasemap);
+  React.useEffect(() => {
+    if (previousConfiguredBasemap.current !== configuredBasemap) {
+      previousConfiguredBasemap.current = configuredBasemap;
+      setBasemapOverride(null);
+    }
+  }, [configuredBasemap]);
 
   React.useEffect(() => {
     if (!containerRef.current) return undefined;
@@ -69,8 +102,10 @@ export function MapView({ definitionUid, hostUid, mountId, api, compiler }) {
       const runtime = createInlineMapRuntime({
         container: containerRef.current,
         loadAsset: createImageAssetLoader({ getFile: api.getFile }),
+        resolveBasemap: (reference) => basemaps.resolve(reference),
         onFeature: setSelected,
         onError: setMapError,
+        onBasemap: setBasemapStatus,
         onAssetError: ({ asset, error: assetError }) => {
           setAssetDiagnostics((current) => [
             ...current.filter(({ key }) => key !== `asset.load-failed:${asset.id}`),
@@ -92,14 +127,14 @@ export function MapView({ definitionUid, hostUid, mountId, api, compiler }) {
         resizeObserver.observe(containerRef.current);
       }
     } catch (runtimeError) {
-      setMapError(runtimeError);
+      setMapError(safeBasemapError(runtimeError));
     }
     return () => {
       resizeObserver?.disconnect();
       mapRuntimeRef.current?.remove();
       mapRuntimeRef.current = null;
     };
-  }, [mountId]);
+  }, [api.getFile, basemaps, mountId]);
 
   React.useEffect(() => {
     const session = createLiveMapSession({
@@ -139,7 +174,6 @@ export function MapView({ definitionUid, hostUid, mountId, api, compiler }) {
     let cancelled = false;
     const runtime = mapRuntimeRef.current;
     setAssetDiagnostics([]);
-    runtime?.setPresentation(result.presentation);
     runtime?.setData(result.featureCollection);
     runtime?.setLayers([]);
     void runtime?.setAssets(result.assets).then(() => {
@@ -153,6 +187,14 @@ export function MapView({ definitionUid, hostUid, mountId, api, compiler }) {
       cancelled = true;
     };
   }, [result]);
+
+  React.useEffect(() => {
+    if (!result) return;
+    mapRuntimeRef.current?.setPresentation({
+      ...result.presentation,
+      basemap: requestedBasemap,
+    });
+  }, [basemapRevision, requestedBasemap, result]);
 
   React.useEffect(() => {
     if (
@@ -189,7 +231,23 @@ export function MapView({ definitionUid, hostUid, mountId, api, compiler }) {
           <Count label="sources" value={counts.sources} />
           <Count label="mapped" value={counts.mapped} />
           <Count label="unmapped" value={counts.unmapped} />
-          <span className="rrm-basemap">{result?.presentation?.basemap ?? "streets"}</span>
+          <label
+            className="rrm-basemap"
+            title="This changes the visible map only. Use map/basemap beneath the map to save the choice."
+          >
+            <span className="rrm-visually-hidden">Basemap</span>
+            <select
+              aria-label="Preview basemap"
+              value={basemapStatus.id}
+              onChange={(event) => setBasemapOverride(event.target.value)}
+            >
+              {basemapOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.name}
+                </option>
+              ))}
+            </select>
+          </label>
           {phase === "refreshing" ? <span className="rrm-refreshing">Refreshing…</span> : null}
         </div>
         <div className="rrm-actions">
@@ -210,8 +268,23 @@ export function MapView({ definitionUid, hostUid, mountId, api, compiler }) {
           >
             Fit
           </button>
+          {basemapOverride ? (
+            <button
+              type="button"
+              className="bp3-button bp3-minimal bp3-small"
+              aria-label="Use the basemap saved in this map"
+              title="Return to the map/basemap value"
+              onClick={() => setBasemapOverride(null)}
+            >
+              Reset view
+            </button>
+          ) : null}
         </div>
       </header>
+
+      {basemapStatus.notice ? (
+        <div className="rrm-basemap-notice">{basemapStatus.notice}</div>
+      ) : null}
 
       <div className="rrm-map-frame">
         <div className="rrm-map" ref={containerRef} />
@@ -243,6 +316,9 @@ export function MapView({ definitionUid, hostUid, mountId, api, compiler }) {
 
       {error ? <div className="rrm-error">Map sources failed: {readableError(error)}</div> : null}
       {mapError ? <div className="rrm-error">Map problem: {readableError(mapError)}</div> : null}
+      {basemapStatus.error ? (
+        <div className="rrm-warning">Basemap setting: {readableError(basemapStatus.error)}</div>
+      ) : null}
       {watchWarning ? (
         <div className="rrm-warning">
           Live refresh could not subscribe; use Refresh. {readableError(watchWarning)}

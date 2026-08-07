@@ -66,15 +66,17 @@ function firstConfiguredValue(entity, title, attributeUids, diagnostics, sourceB
 
 function parseBasemap(raw, diagnostics, sourceBlockUid) {
   if (raw == null) return DEFAULT_PRESENTATION.basemap;
-  const key = String(raw).trim().toLocaleLowerCase();
+  const value = String(raw).trim();
+  const key = value.toLocaleLowerCase();
   const basemap = BASEMAP_ALIASES.get(key);
   if (basemap) return basemap;
+  if (value && value.length <= 120 && !/[\r\n]/u.test(value)) return value;
   diagnostics.push(
     diagnostic(
       "presentation.invalid-basemap",
       sourceBlockUid,
-      "map/basemap must be streets or satellite; streets is being used.",
-      String(raw),
+      "map/basemap must be a configured basemap name of 120 characters or fewer; streets is being used.",
+      value,
     ),
   );
   return DEFAULT_PRESENTATION.basemap;

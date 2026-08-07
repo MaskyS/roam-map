@@ -34,6 +34,10 @@ preset remain future work.
 | Cross-source identity | Deduplicate canonical features; retain memberships and provenance | Direct sources implemented; query memberships pending |
 | Per-feature presentation | Native MapLibre expressions | Implemented over the compiled source |
 | Map-wide presentation values | MapLibre `global-state` | Not implemented |
+| Per-map basemap selection | Readable catalog name through `map/basemap` | Implemented |
+| Graph-wide basemap providers | Versioned provider-keyed `extensionAPI.settings` value | Implemented for MapTiler; ready for different provider adapters |
+| Keyless satellite context | EOxCloudless 2016 native raster style | Implemented; service terms still require an honest notice |
+| BYOK satellite and hybrid | MapTiler `satellite-v4` and `hybrid-v4` style URLs | Implemented; live key/account verification required |
 | Images | Runtime asset manager plus MapLibre style images | Implemented for exact HTTP(S) image Markdown |
 | Registered asset size | 64×64 physical pixels at `pixelRatio: 2` | Implemented |
 | Image crop variants | Square token plus an alpha-clipped `#circle` variant | Implemented |
@@ -845,6 +849,124 @@ badge, click-to-cycle behavior, a deterministic radial offset, spiderfying, or
 another explicit interaction. This is product behavior, not evidence for a
 general JavaScript plugin API.
 
+## Basemaps are named graph capabilities
+
+A basemap changes geographic context, not map membership. A direct-source map
+and a future query-source map can therefore make the same durable selection:
+
+```text
+map/basemap:: MapTiler Hybrid
+```
+
+The source path does not see that value:
+
+```text
+direct references or query results
+  -> canonical features and attributes
+  -> roam-map-features
+
+map/basemap name
+  -> graph basemap catalog
+  -> provider adapter
+  -> MapLibre style URL or StyleSpecification
+  -> Map#setStyle
+  -> restore roam-map-features, layers, and images after style.load
+```
+
+This separation matters for the People fixture. Switching from Liberty to EOX
+or MapTiler must not rerun a People query, change the projected `Profile
+Picture` property, or introduce a provider-specific source adapter. It replaces
+the base style, then restores the same source, portrait layers, square and
+circular image registrations, and click handlers.
+
+### What a user configures
+
+The built-in catalog entries are:
+
+| Name | Provider result | Account required |
+|---|---|---|
+| `Liberty` | OpenFreeMap Liberty style URL | No |
+| `EOX Satellite Context` | Native raster style using EOxCloudless 2016 | No |
+
+The compatibility value `streets` resolves to Liberty. The compatibility value
+`satellite` resolves to EOX Satellite Context, not to an unnamed current
+commercial imagery service.
+
+Roam's [Depot Extension
+API](https://roamdocs.fyi/developer-documentation/roam-depot-extension-api)
+documents settings as graph-synced, JSON-serializable extension state. The Roam
+Map settings panel uses that surface for a versioned object keyed by provider.
+Conceptually:
+
+```json
+{
+  "version": 1,
+  "providers": {
+    "maptiler": { "apiKey": "public-browser-key" }
+  }
+}
+```
+
+The one graph-wide MapTiler configuration contributes two choices:
+
+```text
+MapTiler Satellite
+MapTiler Hybrid
+```
+
+They resolve to MapTiler's `satellite-v4` and `hybrid-v4` style URLs. This is
+why the user supplies an account once rather than pasting authenticated URLs
+under every map. Different maps can select Satellite or Hybrid from that same
+provider. If Roam Map later supports Mapbox, Esri, or another provider, each
+gets a distinct provider record and distinct catalog names. Those different
+providers can coexist. Multiple arbitrary accounts for one provider are not
+part of the ordinary model.
+
+The map toolbar's selector is deliberately a preview. It lets someone compare
+views without writing to the graph. The outline's `map/basemap` value remains
+the saved choice because it is visible, referenceable, and exportable.
+
+### Why the key is not a map attribute
+
+A MapTiler browser key is client-visible by design. Putting it in a password
+input only prevents casual shoulder-surfing; it does not make the value a
+secret. Roam settings sync it with the graph, collaborators may be able to
+inspect it, and MapLibre sends it with provider requests. Use MapTiler's
+[public-key protection](https://docs.maptiler.com/cloud/api/authentication-key/)
+and check the account's current permitted uses and request allowance.
+
+The boundary is still useful:
+
+- the key is stored once in that provider's graph configuration;
+- map blocks contain only a readable catalog name;
+- feature properties and source provenance never contain the key;
+- public catalog entries and React status omit the style URL and fingerprint;
+- map errors redact `key`, `token`, and `access_token` query values; and
+- changing a key changes the internal fingerprint, so mounted maps reload the
+  same named style without requiring edits to every map.
+
+### Why EOX is called context
+
+The keyless entry uses this exact Web Mercator tile template:
+
+```text
+https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/g/{z}/{y}/{x}.jpg
+```
+
+It is the 2016 Sentinel-2 cloudless mosaic at roughly 10 m resolution. Roam Map
+requests tiles through zoom 14 and lets MapLibre overscale them above that.
+This can show regions, roads, fields, and settlement patterns, but it is not a
+current building-level satellite view. The style's attribution identifies EOX,
+Copernicus, 2016, and CC BY 4.0. EOX's free-service terms and rate limits still
+need checking for the intended use, so the UI states that caveat instead of
+calling the service unrestricted.
+
+This is an ordinary MapLibre [raster
+source](https://maplibre.org/maplibre-style-spec/sources/#raster) and raster
+layer. MapTiler is an ordinary complete style URL. The catalog adds naming,
+provider setup, and key hygiene around those native inputs; it does not add a
+replacement style language.
+
 ## The JavaScript customization hook remains deferred
 
 Validated GeoJSON, native MapLibre layers, native expressions, and runtime
@@ -879,8 +1001,9 @@ the declarative map path must not evaluate arbitrary graph JavaScript.
 5. Read the current GitHub issues, especially
    [#9](https://github.com/MaskyS/roam-map/issues/9),
    [#20](https://github.com/MaskyS/roam-map/issues/20) and
-   [#21](https://github.com/MaskyS/roam-map/issues/21), and the parity fixture
-   in [#22](https://github.com/MaskyS/roam-map/issues/22), plus their latest
+   [#21](https://github.com/MaskyS/roam-map/issues/21), the parity fixture in
+   [#22](https://github.com/MaskyS/roam-map/issues/22), and basemap work in
+   [#23](https://github.com/MaskyS/roam-map/issues/23), plus their latest
    comments.
 
 ### Current unit-level contracts
@@ -909,6 +1032,16 @@ The current suite proves:
   `pixelRatio: 2`.
 - Style replacement restores the compiled source, authored layers, fallback,
   and runtime images.
+- Liberty, EOX, and every configured MapTiler variant resolve through one
+  catalog contract; arbitrary provider names do not enter source compilation.
+- One MapTiler provider configuration produces Satellite and Hybrid entries
+  without exposing its key in catalog or status objects.
+- Updating MapTiler preserves stored records for other provider adapters that
+  this build does not yet understand.
+- Changing the key behind an unchanged basemap name changes its fingerprint
+  and reapplies the style on a mounted map.
+- Unknown names and unsupported stored schema versions fail visibly and fall
+  back to Liberty; authenticated URLs are redacted from runtime errors.
 - Stale image work is aborted or ignored by its generation guard.
 
 Use the installed style-spec package in focused tests when testing MapLibre
@@ -936,16 +1069,24 @@ nine existing person pages plus the two native layers shown in Map A. Verify:
    asset update without requiring a membership change.
 5. Remove or break one image and confirm its ordinary point remains visible.
 6. Change the basemap/style and confirm portraits return after `style.load`.
-7. Confirm both same-coordinate people remain distinct and discoverable.
-8. Test a Roam-uploaded file through the supported file API, including an
+7. Preview `EOX Satellite Context`; confirm its visible attribution, 2016/10 m
+   notice, useful zoom limit, and return to the saved map value.
+8. Add one MapTiler key in the Roam Map settings panel. Use Satellite and
+   Hybrid on different maps, rotate the key, and confirm both MapTiler views
+   reload while Liberty and EOX do not. Inspect errors and diagnostics to
+   confirm no authenticated URL is shown.
+9. Confirm both same-coordinate people remain distinct and discoverable.
+10. Test a Roam-uploaded file through the supported file API, including an
    encrypted graph when available.
-9. Confirm the graph is not rewritten and a copied native layer remains
+11. Confirm the graph is not rewritten and a copied native layer remains
    understandable without an inspector.
 
-The 2026-08-07 checkpoint passed 43 tests, the bundle guard, an explicit CLI
-reload, and the live nine-source compile with no current layer or asset
-diagnostics. Re-run the checks above after changing the compiler or runtime;
-the recorded observation is evidence, not a substitute for a new live test.
+The 2026-08-07 basemap checkpoint passed 53 tests, the bundle guard, and an
+explicit CLI reload. The live nine-source People map switched from Liberty to
+EOX, retained its circular portraits and ordinary points, and showed the
+2016/10 m notice plus visible EOX/Copernicus attribution. Re-run the checks
+above after changing the compiler or runtime; the recorded observation is
+evidence, not a substitute for a new live test.
 
 When #9 is implemented, add a second map fed by a child native query. Compare
 its feature UIDs, properties, and presentation with the direct map; exercise
@@ -988,6 +1129,11 @@ document to a settled contract solely because a synthetic unit fixture passes.
 - [`case`](https://maplibre.org/maplibre-style-spec/expressions/#case)
 - [`coalesce`](https://maplibre.org/maplibre-style-spec/expressions/#coalesce)
 - [`image`](https://maplibre.org/maplibre-style-spec/expressions/#image)
+- [Raster sources](https://maplibre.org/maplibre-style-spec/sources/#raster)
+- [`Map#setStyle`](https://maplibre.org/maplibre-gl-js/docs/API/classes/Map/#setstyle)
+- [MapTiler MapLibre styles](https://docs.maptiler.com/maplibre-gl-js/)
+- [MapTiler public-key protection](https://docs.maptiler.com/cloud/api/authentication-key/)
+- [EOxCloudless](https://cloudless.eox.at/)
 - [`to-number`](https://maplibre.org/maplibre-style-spec/expressions/#to-number)
 - [`global-state`](https://maplibre.org/maplibre-style-spec/expressions/#global-state)
 - [Root `state`](https://maplibre.org/maplibre-style-spec/root/#state)

@@ -1,4 +1,11 @@
 import maplibregl from "maplibre-gl";
+import {
+  DEFAULT_MAP_STYLE,
+  EOX_SATELLITE_TILE_URL,
+  eoxSatelliteStyle,
+  resolveBuiltInBasemap,
+  safeBasemapError,
+} from "./basemaps.js";
 import { defaultMarkerImage } from "./image-assets.js";
 import {
   DEFAULT_MARKER_IMAGE_ID,
@@ -9,43 +16,27 @@ import {
 import { DEFAULT_PRESENTATION } from "./map-presentation.js";
 
 export { MAP_SOURCE_ID };
+export { DEFAULT_MAP_STYLE };
 export const MAP_LAYER_ID = DEFAULT_POINT_LAYER_ID;
-export const DEFAULT_MAP_STYLE = "https://tiles.openfreemap.org/styles/liberty";
-export const SATELLITE_TILE_URL =
-  "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg";
+export const SATELLITE_TILE_URL = EOX_SATELLITE_TILE_URL;
 
 const EMPTY_COLLECTION = Object.freeze({ type: "FeatureCollection", features: [] });
 
 export function satelliteMapStyle() {
-  return {
-    version: 8,
-    sources: {
-      "roam-map-satellite": {
-        type: "raster",
-        tiles: [SATELLITE_TILE_URL],
-        tileSize: 256,
-        attribution:
-          '<a href="https://cloudless.eox.at/">EOxCloudless</a> by <a href="https://eox.at/">EOX IT Services GmbH</a> (Contains modified Copernicus Sentinel data 2020)',
-      },
-    },
-    layers: [
-      {
-        id: "roam-map-satellite",
-        type: "raster",
-        source: "roam-map-satellite",
-      },
-    ],
-  };
+  return eoxSatelliteStyle();
 }
 
 export function styleForBasemap(basemap) {
-  return basemap === "satellite" ? satelliteMapStyle() : DEFAULT_MAP_STYLE;
+  return resolveBuiltInBasemap(basemap).style;
 }
 
 function normalizedPresentation(presentation) {
   const marker = presentation?.marker ?? {};
   return {
-    basemap: presentation?.basemap === "satellite" ? "satellite" : "streets",
+    basemap:
+      typeof presentation?.basemap === "string" && presentation.basemap.trim()
+        ? presentation.basemap.trim()
+        : DEFAULT_PRESENTATION.basemap,
     marker: {
       color: marker.color ?? DEFAULT_PRESENTATION.marker.color,
       radius: Number.isFinite(marker.radius)
@@ -82,9 +73,11 @@ export function createInlineMapRuntime({
   style = DEFAULT_MAP_STYLE,
   presentation = DEFAULT_PRESENTATION,
   loadAsset = null,
+  resolveBasemap = resolveBuiltInBasemap,
   onFeature,
   onError,
   onAssetError,
+  onBasemap,
   onLoad,
 }) {
   let removed = false;
@@ -92,6 +85,7 @@ export function createInlineMapRuntime({
   let currentData = EMPTY_COLLECTION;
   let currentLayers = [];
   let currentPresentation = normalizedPresentation(presentation);
+  let currentBasemap = resolveBasemap(currentPresentation.basemap);
   let fitWhenLoaded = false;
   let assetGeneration = 0;
   let assetAbortController = null;
@@ -100,9 +94,14 @@ export function createInlineMapRuntime({
   const interactiveLayerIds = new Set();
   const fallback = defaultMarkerImage();
 
+  function notifyBasemap() {
+    const { style: _style, fingerprint: _fingerprint, ...status } = currentBasemap;
+    onBasemap?.(status);
+  }
+
   const map = new mapLibrary.Map({
     container,
-    style: style === DEFAULT_MAP_STYLE ? styleForBasemap(currentPresentation.basemap) : style,
+    style: style === DEFAULT_MAP_STYLE ? currentBasemap.style : style,
     center: [0, 20],
     zoom: 1.35,
     attributionControl: true,
@@ -251,7 +250,7 @@ export function createInlineMapRuntime({
       applyMarkerPaint();
       syncLayerInteractions();
     } catch (error) {
-      onError?.(error);
+      onError?.(safeBasemapError(error));
     }
   }
 
@@ -287,17 +286,23 @@ export function createInlineMapRuntime({
 
   function handleStyleLoad() {
     if (removed) return;
+    loaded = true;
     ensureOverlay();
     onLoad?.();
   }
 
   function handleError(event) {
-    onError?.(event?.error ?? new Error("The basemap or one of its resources could not load."));
+    onError?.(
+      safeBasemapError(
+        event?.error ?? new Error("The basemap or one of its resources could not load."),
+      ),
+    );
   }
 
   map.on("load", handleLoad);
   map.on("style.load", handleStyleLoad);
   map.on("error", handleError);
+  notifyBasemap();
 
   async function setAssets(assets = []) {
     if (removed) return;
@@ -369,13 +374,36 @@ export function createInlineMapRuntime({
     setPresentation(presentationValue) {
       if (removed) return;
       const next = normalizedPresentation(presentationValue);
-      const basemapChanged = next.basemap !== currentPresentation.basemap;
+      let nextBasemap;
+      try {
+        nextBasemap = resolveBasemap(next.basemap);
+      } catch (error) {
+        nextBasemap = {
+          ...resolveBuiltInBasemap(DEFAULT_PRESENTATION.basemap),
+          error: safeBasemapError(error),
+          fallback: true,
+          requested: next.basemap,
+        };
+      }
+      const basemapChanged = nextBasemap.fingerprint !== currentBasemap.fingerprint;
       currentPresentation = next;
+      currentBasemap = nextBasemap;
+      notifyBasemap();
       if (basemapChanged && typeof map.setStyle === "function") {
-        map.setStyle(styleForBasemap(next.basemap));
+        loaded = false;
+        try {
+          map.setStyle(currentBasemap.style);
+        } catch (error) {
+          loaded = true;
+          onError?.(safeBasemapError(error));
+        }
       } else {
         applyMarkerPaint();
       }
+    },
+    getBasemap() {
+      const { style: _style, fingerprint: _fingerprint, ...status } = currentBasemap;
+      return status;
     },
     fit,
     resize() {

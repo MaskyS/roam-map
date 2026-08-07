@@ -9,6 +9,7 @@ import {
 } from "../src/map-runtime.js";
 import { DEFAULT_MARKER_IMAGE_ID, FEATURE_PROPERTIES } from "../src/map-contract.js";
 import { circularImageId } from "../src/image-assets.js";
+import { createBasemapRegistry } from "../src/basemaps.js";
 
 class FakeBounds {
   constructor() {
@@ -105,6 +106,7 @@ class FakeMap {
 
   setStyle(style) {
     this.lastStyle = style;
+    this.styles = [...(this.styles ?? []), style];
     this.sources.clear();
     this.layers.clear();
     this.images.clear();
@@ -296,8 +298,14 @@ test("presentation updates style markers and restores the data overlay after a b
     marker: { color: "#2457a6", radius: 9 },
   });
 
-  assert.equal(map.lastStyle.sources["roam-map-satellite"].tiles[0], SATELLITE_TILE_URL);
-  assert.match(map.lastStyle.sources["roam-map-satellite"].attribution, /EOxCloudless/u);
+  assert.equal(
+    map.lastStyle.sources["roam-map/eox-satellite-context"].tiles[0],
+    SATELLITE_TILE_URL,
+  );
+  assert.match(
+    map.lastStyle.sources["roam-map/eox-satellite-context"].attribution,
+    /EOxCloudless/u,
+  );
   assert.equal(map.getSource(MAP_SOURCE_ID).data, data);
   assert.deepEqual(map.getLayer(MAP_LAYER_ID).paint["circle-color"], [
     "coalesce",
@@ -308,4 +316,52 @@ test("presentation updates style markers and restores the data overlay after a b
 
   runtime.remove();
   assert.equal(map.events.size, 0);
+});
+
+test("named MapTiler basemaps reapply changed keys without exposing them in status or errors", async () => {
+  FakeMap.instances.length = 0;
+  let stored = {
+    version: 1,
+    providers: { maptiler: { apiKey: "first/private-key" } },
+  };
+  const registry = createBasemapRegistry({
+    settings: {
+      get: () => stored,
+      set: async (_key, value) => {
+        stored = value;
+      },
+    },
+  });
+  const statuses = [];
+  const errors = [];
+  const runtime = createInlineMapRuntime({
+    container: {},
+    mapLibrary: fakeLibrary,
+    resolveBasemap: (reference) => registry.resolve(reference),
+    onBasemap: (status) => statuses.push(status),
+    onError: (error) => errors.push(error),
+  });
+  const map = FakeMap.instances[0];
+  map.emit("load");
+
+  runtime.setPresentation({ basemap: "MapTiler Hybrid" });
+  assert.equal(
+    map.lastStyle,
+    "https://api.maptiler.com/maps/hybrid-v4/style.json?key=first%2Fprivate-key",
+  );
+  assert.doesNotMatch(JSON.stringify(statuses.at(-1)), /first|private-key/u);
+
+  await registry.replaceProviderConfiguration("maptiler", {
+    apiKey: "second/private-key",
+  });
+  runtime.setPresentation({ basemap: "MapTiler Hybrid" });
+  assert.equal(map.styles.length, 2);
+  assert.match(map.lastStyle, /second%2Fprivate-key/u);
+
+  map.emit("error", {
+    error: new Error(`Request failed for ${map.lastStyle}`),
+  });
+  assert.doesNotMatch(errors.at(-1).message, /second|private-key/u);
+  assert.match(errors.at(-1).message, /key=\[redacted\]/u);
+  runtime.remove();
 });

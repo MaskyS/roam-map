@@ -1,0 +1,271 @@
+@import "maplibre-gl/dist/maplibre-gl.css";
+
+.rrm-mount {
+  display: block;
+  width: min(100%, 760px);
+  min-width: 280px;
+  margin: 6px 0 10px;
+}
+
+.rrm-shell {
+  --rrm-border: rgba(92, 112, 128, 0.28);
+  --rrm-surface: var(--bc-main, #ffffff);
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--rrm-border);
+  border-radius: 6px;
+  background: var(--rrm-surface);
+  box-shadow: 0 1px 2px rgba(16, 22, 26, 0.08);
+  color: var(--bc-main-text, #182026);
+  font-family: var(--roam-font, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font-size: 12px;
+}
+
+.rrm-toolbar,
+.rrm-counts,
+.rrm-actions {
+  display: flex;
+  align-items: center;
+}
+
+.rrm-toolbar {
+  min-height: 34px;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 5px 3px 10px;
+  border-bottom: 1px solid var(--rrm-border);
+}
+
+.rrm-counts {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.rrm-count strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.rrm-basemap {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border-radius: 9px;
+  background: rgba(92, 112, 128, 0.12);
+  color: #5c7080;
+}
+
+.rrm-basemap select {
+  max-width: 190px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 1px 20px 1px 6px;
+}
+
+.rrm-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.rrm-basemap-notice {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--rrm-border);
+  background: rgba(255, 248, 225, 0.7);
+  color: #6f5517;
+  line-height: 1.35;
+}
+
+.rrm-refreshing {
+  color: #5c7080;
+}
+
+.rrm-map-frame {
+  position: relative;
+  height: 330px;
+  min-height: 220px;
+  background: #e8edf0;
+}
+
+.rrm-map-frame > .rrm-map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.rrm-map .maplibregl-canvas:focus {
+  outline: 2px solid #137cbd;
+  outline-offset: -2px;
+}
+
+.rrm-state {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  left: 50%;
+  width: min(82%, 360px);
+  transform: translate(-50%, -50%);
+  padding: 10px 14px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 5px rgba(16, 22, 26, 0.16);
+  color: #394b59;
+  text-align: center;
+  pointer-events: none;
+}
+
+.rrm-selection {
+  position: absolute;
+  z-index: 4;
+  left: 10px;
+  bottom: 24px;
+  display: grid;
+  max-width: min(320px, calc(100% - 20px));
+  gap: 5px;
+  padding: 10px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 2px 8px rgba(16, 22, 26, 0.25);
+  color: #182026;
+}
+
+.rrm-selection-close {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  border: 0;
+  background: transparent;
+  color: #5c7080;
+  cursor: pointer;
+  font-size: 17px;
+}
+
+.rrm-error,
+.rrm-warning {
+  padding: 7px 10px;
+  border-top: 1px solid var(--rrm-border);
+}
+
+.rrm-error {
+  background: #fff3f2;
+  color: #a82a2a;
+}
+
+.rrm-warning {
+  background: #fff8e1;
+  color: #8a5a00;
+}
+
+.rrm-diagnostics {
+  border-top: 1px solid var(--rrm-border);
+  padding: 7px 10px;
+}
+
+.rrm-diagnostics summary {
+  cursor: pointer;
+  color: #5c7080;
+}
+
+.rrm-diagnostics ul {
+  display: grid;
+  max-height: 180px;
+  overflow: auto;
+  gap: 7px;
+  margin: 8px 0 2px;
+  padding-left: 18px;
+}
+
+.rrm-diagnostics li {
+  padding-right: 4px;
+}
+
+.rrm-diagnostics code {
+  display: block;
+  overflow: hidden;
+  margin-top: 2px;
+  color: #5c7080;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rrm-diagnostics .bp3-button {
+  margin-left: 5px;
+}
+
+.rrm-basemap-settings {
+  display: grid;
+  gap: 10px;
+  padding: 4px 0 10px;
+}
+
+.rrm-basemap-settings p {
+  margin: 0;
+}
+
+.rrm-basemap-settings code {
+  overflow-wrap: anywhere;
+}
+
+.rrm-provider-configuration {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid rgba(92, 112, 128, 0.28);
+  border-radius: 5px;
+}
+
+.rrm-provider-configuration label {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.32fr) minmax(180px, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.rrm-provider-configuration input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.rrm-configuration-examples {
+  display: grid;
+  gap: 3px;
+  color: #5c7080;
+}
+
+.rrm-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rrm-settings-warning,
+.rrm-settings-error {
+  color: #a82a2a;
+}
+
+.rrm-settings-success {
+  color: #0f6b3d;
+}
+
+@media (max-width: 520px) {
+  .rrm-map-frame {
+    height: 260px;
+  }
+
+  .rrm-toolbar {
+    align-items: flex-start;
+  }
+
+  .rrm-provider-configuration label {
+    grid-template-columns: 1fr;
+  }
+}

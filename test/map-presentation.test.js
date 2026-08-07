@@ -117,7 +117,7 @@ test("legacy attribute triples retain the same map and marker meaning", () => {
 test("invalid presentation values remain local diagnostics and fall back safely", () => {
   const root = block("map", "{{map}}");
   root[":harc/_e"] = [
-    relation(MAP_FIELDS.basemap, { ":harc/v-string": "moon" }, "basemap"),
+    relation(MAP_FIELDS.basemap, { ":harc/v-string": "x".repeat(121) }, "basemap"),
     relation(MAP_FIELDS.color, { ":harc/v-string": "not a color" }, "color"),
     relation(MAP_FIELDS.radius, { ":harc/v-string": "200" }, "radius"),
   ];
@@ -136,4 +136,20 @@ test("invalid presentation values remain local diagnostics and fall back safely"
       "presentation.invalid-radius",
     ]),
   );
+});
+
+test("a named graph basemap is preserved for the runtime catalog to resolve", () => {
+  const root = block("map", "{{map}}");
+  root[":harc/_e"] = [
+    relation(
+      MAP_FIELDS.basemap,
+      { ":harc/v-string": "MapTiler Hybrid" },
+      "basemap",
+    ),
+  ];
+
+  const result = compileMapPresentation({ root, descendants: [] });
+
+  assert.equal(result.presentation.basemap, "MapTiler Hybrid");
+  assert.deepEqual(result.diagnostics, []);
 });

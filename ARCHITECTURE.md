@@ -1,7 +1,7 @@
 # Composable architecture for Roam Map
 
-Status: technical audit plus first product-loop implementation, current
-2026-08-06.
+Status: technical audit plus first product-loop and basemap-catalog
+implementation, current 2026-08-07.
 
 This note develops the source and rendering model in [DESIGN.md](./DESIGN.md).
 It asks how Roam Map can stay simple for an ordinary `{{map}}` outline while
@@ -46,6 +46,10 @@ identified separately.
 9. Guard every asynchronous compilation with an `AbortSignal` and a generation
    number. Each visible rendering of a map block owns a separate view instance
    and cleanup scope.
+10. Resolve readable per-map basemap names through a graph-wide catalog. Keep
+    provider configuration and public browser keys in extension settings, and
+    keep provider/authentication logic out of source adapters and MapLibre
+    layers.
 
 ## What ProseMirror contributes
 
@@ -194,9 +198,13 @@ The same page documents two useful authoring surfaces:
   to `settings.canSet` when a graph administrator installed the extension for
   everyone.
 
-Settings are appropriate for a default map style, default height, or a
-graph-wide result cap. Per-map sources, layers, and saved views belong in the
-outline so that they remain visible, referenceable, and exportable.
+Settings are appropriate for reusable graph-wide capabilities: default height,
+a result cap, or provider configurations whose public browser keys should
+not be copied into every map. Per-map sources, layers, and saved choices belong
+in the outline so that they remain visible, referenceable, and exportable. The
+implemented split follows this rule: each keyed provider is configured once
+through `extensionAPI.settings`, while each map selects one of the resulting
+catalog names through `map/basemap`.
 
 ### React and Blueprint are already present
 
@@ -770,14 +778,43 @@ Marker shape and size should normally remain MapLibre concepts:
   `Marker` helper, but that helper must remain visibly separate from the native
   layer specification.
 
-The same resolver should feed MapLibre resources. `map/style` can take a style
-URL directly or refer to a reusable block containing a validated MapLibre style
-specification. Separate source and layer definitions can extend that style.
-The current `map/basemap:: streets|satellite` switch is a bounded live
-experiment, not the long-term model: it cannot express a third provider, a
-raster overlay, labels over imagery, or a user-authored style. Named presets
-may remain as conveniences if they compile to the same ordinary MapLibre
-style/source/layer inputs.
+The same resolver should feed MapLibre resources. The implemented basemap
+catalog lets `map/basemap` name a reusable graph capability without putting an
+authenticated URL in the outline. Built-in Liberty and EOX entries and every
+configured MapTiler Satellite/Hybrid entry resolve to the same provider-neutral
+runtime value:
+
+```ts
+{
+  id,
+  name,
+  provider,
+  variant,
+  style: string | StyleSpecification,
+  fingerprint
+}
+```
+
+Only the internal resolution carries `style` and `fingerprint`. Catalog lists,
+React status, graph blocks, diagnostics, and errors omit or redact keys. The
+fingerprint changes when a key or style changes, so mounted maps call
+`Map#setStyle` even when their readable `map/basemap` value stays the same.
+After `style.load`, the runtime restores the extension-owned GeoJSON source,
+authored layers, default marker, and runtime image variants.
+
+The versioned graph setting contains an object keyed by provider ID. The
+MapTiler adapter reads its one graph-wide key and derives `MapTiler Satellite`
+and `MapTiler Hybrid`. A future Mapbox or Esri adapter gets a neighboring
+provider record and contributes its own catalog entries. An older build
+preserves provider records it does not understand when it updates MapTiler,
+while an unsupported future schema version becomes read-only with a visible
+warning instead of being guessed or overwritten.
+
+This catalog is not the advanced composition boundary. A future `map/style`
+can take a style URL directly or refer to a reusable block containing a
+validated MapLibre style specification; separate source and layer definitions
+can extend it. Those forms should reuse the same `string | StyleSpecification`
+runtime seam rather than teaching source adapters about providers.
 
 The complete concept walkthrough, expression semantics, image fallback rules,
 and future-agent verification checklist are in
