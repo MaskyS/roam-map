@@ -58,9 +58,9 @@ export function BasemapSettingsEditor({ registry }) {
   return (
     <div className="rrm-basemap-settings">
       <p>
-        Liberty and EOX Satellite Context are always available. Configure each keyed provider
-        once for this graph; different providers can then contribute their own reusable basemap
-        choices.
+        OpenFreeMap's Liberty, Positron, Bright, Dark, and Fiord styles and EOX Satellite
+        Context are always available. Configure each keyed provider once for this graph;
+        different providers can then contribute their own reusable basemap choices.
       </p>
       <p>
         Select one beneath a map with <code>map/basemap:: Basemap name</code>. Provider keys are

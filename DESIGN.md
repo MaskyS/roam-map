@@ -59,11 +59,13 @@ adapters own URL and authentication details; the MapLibre runtime receives
 only a style plus a change fingerprint. Public catalog and status values never
 contain the key, and map errors redact authenticated URLs.
 
-Liberty and EOX Satellite Context implement the same catalog-entry contract as
-configured MapTiler styles. That common contract is the extension seam: another
-provider can add entries without changing source compilation, feature
-projection, layers, images, or the map view. Arbitrary authored style URLs and
-reusable full style specifications remain separate advanced work.
+OpenFreeMap's Liberty, Positron, Bright, Dark, and Fiord variants and EOX
+Satellite Context implement the same catalog-entry contract as configured
+MapTiler styles. That common contract is the extension seam: one provider can
+contribute several styles, and another provider can add entries without
+changing source compilation, feature projection, layers, images, or the map
+view. Arbitrary authored style URLs and reusable full style specifications
+remain separate advanced work.
 
 For ordinary point styling, use a native MapLibre layer rather than introducing
 parallel `map/marker-shape` and `map/marker-size` vocabularies. A circle's shape

@@ -780,9 +780,9 @@ Marker shape and size should normally remain MapLibre concepts:
 
 The same resolver should feed MapLibre resources. The implemented basemap
 catalog lets `map/basemap` name a reusable graph capability without putting an
-authenticated URL in the outline. Built-in Liberty and EOX entries and every
-configured MapTiler Satellite/Hybrid entry resolve to the same provider-neutral
-runtime value:
+authenticated URL in the outline. OpenFreeMap's five built-in style variants,
+the built-in EOX entry, and every configured MapTiler Satellite/Hybrid entry
+resolve to the same provider-neutral runtime value:
 
 ```ts
 {
@@ -815,6 +815,11 @@ can take a style URL directly or refer to a reusable block containing a
 validated MapLibre style specification; separate source and layer definitions
 can extend it. Those forms should reuse the same `string | StyleSpecification`
 runtime seam rather than teaching source adapters about providers.
+
+OpenFreeMap's `3D` website demo is deliberately absent from the basemap
+catalog. It reuses Liberty while changing pitch, bearing, zoom, and rotation;
+those are camera and interaction choices. Treating 3D as view configuration
+keeps it composable with providers instead of misrepresenting it as a style.
 
 The complete concept walkthrough, expression semantics, image fallback rules,
 and future-agent verification checklist are in

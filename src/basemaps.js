@@ -1,10 +1,22 @@
 export const BASEMAP_SETTINGS_KEY = "basemap-provider-configurations";
 export const BASEMAP_SETTINGS_VERSION = 1;
-export const DEFAULT_MAP_STYLE = "https://tiles.openfreemap.org/styles/liberty";
+export const OPENFREEMAP_STYLE_BASE_URL = "https://tiles.openfreemap.org/styles";
+export const DEFAULT_MAP_STYLE = `${OPENFREEMAP_STYLE_BASE_URL}/liberty`;
 export const EOX_SATELLITE_TILE_URL =
   "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/g/{z}/{y}/{x}.jpg";
 
 const DEFAULT_REFERENCE = "streets";
+const OPENFREEMAP_VARIANTS = Object.freeze([
+  Object.freeze({
+    id: "liberty",
+    label: "Liberty",
+    aliases: ["streets", "street", "classic"],
+  }),
+  Object.freeze({ id: "positron", label: "Positron", aliases: [] }),
+  Object.freeze({ id: "bright", label: "Bright", aliases: [] }),
+  Object.freeze({ id: "dark", label: "Dark", aliases: [] }),
+  Object.freeze({ id: "fiord", label: "Fiord", aliases: [] }),
+]);
 const MAPTILER_VARIANTS = Object.freeze([
   Object.freeze({ id: "satellite", label: "Satellite", styleId: "satellite-v4" }),
   Object.freeze({ id: "hybrid", label: "Hybrid", styleId: "hybrid-v4" }),
@@ -138,18 +150,26 @@ export function mapTilerStyleUrl(styleId, apiKey) {
   return url.toString();
 }
 
+export function openFreeMapStyleUrl(styleId) {
+  return `${OPENFREEMAP_STYLE_BASE_URL}/${encodeURIComponent(styleId)}`;
+}
+
+function openFreeMapEntries() {
+  return OPENFREEMAP_VARIANTS.map((variant) => ({
+    id: `openfreemap:${variant.id}`,
+    name: `OpenFreeMap ${variant.label}`,
+    provider: "openfreemap",
+    variant: variant.id,
+    builtIn: true,
+    aliases: [variant.label, ...variant.aliases],
+    notice: null,
+    buildStyle: () => openFreeMapStyleUrl(variant.id),
+  }));
+}
+
 function builtInEntries() {
   return [
-    {
-      id: "liberty",
-      name: "Liberty",
-      provider: "openfreemap",
-      variant: "streets",
-      builtIn: true,
-      aliases: ["streets", "street", "classic", "OpenFreeMap Liberty"],
-      notice: null,
-      buildStyle: () => DEFAULT_MAP_STYLE,
-    },
+    ...openFreeMapEntries(),
     {
       id: "eox-satellite-context",
       name: "EOX Satellite Context",
@@ -202,7 +222,7 @@ function resolution(entries, reference) {
   const error = matched
     ? null
     : new Error(
-        `Basemap “${requested}” is not configured in this graph. Liberty is being shown instead.`,
+        `Basemap “${requested}” is not configured in this graph. OpenFreeMap Liberty is being shown instead.`,
       );
   const style = entry.buildStyle();
   return {

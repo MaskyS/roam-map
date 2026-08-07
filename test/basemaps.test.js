@@ -6,19 +6,32 @@ import {
   EOX_SATELLITE_TILE_URL,
   createBasemapRegistry,
   mapTilerStyleUrl,
+  openFreeMapStyleUrl,
   prepareProviderConfiguration,
   redactBasemapSecrets,
 } from "../src/basemaps.js";
 
-test("built-in Liberty and EOX basemaps resolve through the same public catalog", () => {
+test("five OpenFreeMap styles and EOX resolve through the same built-in catalog", () => {
   const registry = createBasemapRegistry();
   assert.deepEqual(
     registry.list().map(({ id, name }) => ({ id, name })),
     [
-      { id: "liberty", name: "Liberty" },
+      { id: "openfreemap:liberty", name: "OpenFreeMap Liberty" },
+      { id: "openfreemap:positron", name: "OpenFreeMap Positron" },
+      { id: "openfreemap:bright", name: "OpenFreeMap Bright" },
+      { id: "openfreemap:dark", name: "OpenFreeMap Dark" },
+      { id: "openfreemap:fiord", name: "OpenFreeMap Fiord" },
       { id: "eox-satellite-context", name: "EOX Satellite Context" },
     ],
   );
+
+  for (const variant of ["liberty", "positron", "bright", "dark", "fiord"]) {
+    const basemap = registry.resolve(variant);
+    assert.equal(basemap.provider, "openfreemap");
+    assert.equal(basemap.variant, variant);
+    assert.equal(basemap.style, openFreeMapStyleUrl(variant));
+  }
+  assert.equal(registry.resolve("streets").id, "openfreemap:liberty");
 
   const eox = registry.resolve("satellite");
   const source = eox.style.sources["roam-map/eox-satellite-context"];
@@ -43,7 +56,16 @@ test("one MapTiler provider configuration contributes Satellite and Hybrid witho
   const registry = createBasemapRegistry({ settings });
   assert.deepEqual(
     registry.list().map(({ name }) => name),
-    ["Liberty", "EOX Satellite Context", "MapTiler Satellite", "MapTiler Hybrid"],
+    [
+      "OpenFreeMap Liberty",
+      "OpenFreeMap Positron",
+      "OpenFreeMap Bright",
+      "OpenFreeMap Dark",
+      "OpenFreeMap Fiord",
+      "EOX Satellite Context",
+      "MapTiler Satellite",
+      "MapTiler Hybrid",
+    ],
   );
   assert.doesNotMatch(JSON.stringify(registry.list()), /work\/key/u);
 
@@ -98,7 +120,7 @@ test("invalid provider settings fail without saving and unknown names visibly fa
   assert.deepEqual(writes, []);
 
   const unknown = registry.resolve("Moon Photos");
-  assert.equal(unknown.id, "liberty");
+  assert.equal(unknown.id, "openfreemap:liberty");
   assert.equal(unknown.fallback, true);
   assert.match(unknown.error.message, /not configured/u);
 });
@@ -137,7 +159,11 @@ test("removing a provider configuration removes only that provider's catalog ent
   });
   await registry.replaceProviderConfiguration("maptiler", null);
   assert.deepEqual(registry.list().map(({ name }) => name), [
-    "Liberty",
+    "OpenFreeMap Liberty",
+    "OpenFreeMap Positron",
+    "OpenFreeMap Bright",
+    "OpenFreeMap Dark",
+    "OpenFreeMap Fiord",
     "EOX Satellite Context",
   ]);
   assert.deepEqual(writes[0].providers, {});
@@ -155,7 +181,11 @@ test("an unknown stored schema version is read-only rather than guessed or overw
   });
   assert.equal(registry.canSet, false);
   assert.deepEqual(registry.list().map(({ name }) => name), [
-    "Liberty",
+    "OpenFreeMap Liberty",
+    "OpenFreeMap Positron",
+    "OpenFreeMap Bright",
+    "OpenFreeMap Dark",
+    "OpenFreeMap Fiord",
     "EOX Satellite Context",
   ]);
   assert.match(registry.getWarnings()[0], /version 99/u);

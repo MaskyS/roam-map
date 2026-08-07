@@ -82,11 +82,15 @@ source edits, so the map should update without a Roam reload.
 
 ### Basemap catalog and provider settings
 
-Liberty remains the default and does not contact an imagery provider. The
-catalog always contains two keyless choices:
+OpenFreeMap Liberty remains the default and does not contact an imagery
+provider. The catalog always contains six keyless choices:
 
-- `Liberty` is OpenFreeMap's street-map style. The compatibility values
-  `streets` and `street` resolve to it.
+- [OpenFreeMap](https://openfreemap.org/quick_start/) contributes
+  `OpenFreeMap Liberty`, `OpenFreeMap Positron`,
+  `OpenFreeMap Bright`, `OpenFreeMap Dark`, and `OpenFreeMap Fiord`. These are
+  complete MapLibre style URLs on the same keyless provider. The shorter style
+  names also resolve, and the compatibility values `streets` and `street`
+  resolve to Liberty.
 - `EOX Satellite Context` is the 2016 EOxCloudless Sentinel-2 mosaic. It is a
   global 10 m context layer, not current building-level photography. The
   compatibility value `satellite` resolves to it. Its raster source includes
@@ -120,14 +124,21 @@ the current [pricing and permitted uses](https://www.maptiler.com/cloud/pricing/
 Roam Map never writes the key to map blocks, feature properties, status
 objects, or diagnostics, and authenticated URLs are redacted from map errors.
 
-Both providers still enter MapLibre through its ordinary style boundary. EOX
-produces a native [raster source and raster
-layer](https://maplibre.org/maplibre-style-spec/sources/#raster); MapTiler
-produces a MapLibre style URL. After
+Every catalog entry still enters MapLibre through its ordinary style boundary.
+The five OpenFreeMap variants and both MapTiler variants are complete style
+URLs. EOX produces a native [raster source and raster
+layer](https://maplibre.org/maplibre-style-spec/sources/#raster); MapTiler uses
+an authenticated URL while OpenFreeMap does not. After
 [`Map#setStyle`](https://maplibre.org/maplibre-gl-js/docs/API/classes/Map/#setstyle),
 Roam Map restores its compiled feature source, authored layers, fallback
 marker, and runtime images. Source adapters—including the planned native-query
 adapter—never acquire provider or key logic.
+
+OpenFreeMap's website also demonstrates a `3D` option, but it is not a sixth
+style. Its [demo implementation](https://openfreemap.org/scripts/map.js) loads
+Liberty and changes the camera's pitch, bearing, zoom, and rotation behavior.
+Roam Map therefore treats 3D as future view configuration that can compose
+with a suitable basemap, not as a provider variant.
 
 ### Native MapLibre layer form
 
@@ -299,8 +310,8 @@ documentation. The build uses those React globals and verifies that it did not
 bundle a second React runtime. MapLibre GL JS 5.24.0 is pinned and bundled once.
 The default basemap is OpenFreeMap's Liberty style, so tiles require network
 access and the renderer keeps provider and OpenStreetMap attribution visible.
-The keyless EOX context view and graph-configured MapTiler choices are described
-above.
+The other keyless OpenFreeMap styles, the EOX context view, and graph-configured
+MapTiler choices are described above.
 
 The `{{map}}` mounting adapter is intentionally isolated in one module because
 Roam does not currently document registration of arbitrary inline parser

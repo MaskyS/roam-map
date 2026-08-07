@@ -873,11 +873,11 @@ map/basemap name
   -> restore roam-map-features, layers, and images after style.load
 ```
 
-This separation matters for the People fixture. Switching from Liberty to EOX
-or MapTiler must not rerun a People query, change the projected `Profile
-Picture` property, or introduce a provider-specific source adapter. It replaces
-the base style, then restores the same source, portrait layers, square and
-circular image registrations, and click handlers.
+This separation matters for the People fixture. Switching among OpenFreeMap
+styles, EOX, and MapTiler must not rerun a People query, change the projected
+`Profile Picture` property, or introduce a provider-specific source adapter.
+It replaces the base style, then restores the same source, portrait layers,
+square and circular image registrations, and click handlers.
 
 ### What a user configures
 
@@ -885,12 +885,22 @@ The built-in catalog entries are:
 
 | Name | Provider result | Account required |
 |---|---|---|
-| `Liberty` | OpenFreeMap Liberty style URL | No |
+| `OpenFreeMap Liberty` | Liberty style URL | No |
+| `OpenFreeMap Positron` | Positron style URL | No |
+| `OpenFreeMap Bright` | Bright style URL | No |
+| `OpenFreeMap Dark` | Dark style URL | No |
+| `OpenFreeMap Fiord` | Fiord style URL | No |
 | `EOX Satellite Context` | Native raster style using EOxCloudless 2016 | No |
 
-The compatibility value `streets` resolves to Liberty. The compatibility value
-`satellite` resolves to EOX Satellite Context, not to an unnamed current
-commercial imagery service.
+The unprefixed OpenFreeMap style names also resolve. The compatibility value
+`streets` resolves to OpenFreeMap Liberty. The compatibility value `satellite`
+resolves to EOX Satellite Context, not to an unnamed current commercial imagery
+service.
+
+OpenFreeMap's website labels one demonstration `3D`, but it loads Liberty and
+changes the camera pitch, bearing, zoom, and rotation behavior. It is therefore
+not a sixth basemap. When Roam Map exposes those controls, 3D belongs to view
+configuration so that it can compose with any suitable style.
 
 Roam's [Depot Extension
 API](https://roamdocs.fyi/developer-documentation/roam-depot-extension-api)
@@ -1032,8 +1042,9 @@ The current suite proves:
   `pixelRatio: 2`.
 - Style replacement restores the compiled source, authored layers, fallback,
   and runtime images.
-- Liberty, EOX, and every configured MapTiler variant resolve through one
-  catalog contract; arbitrary provider names do not enter source compilation.
+- All five OpenFreeMap variants, EOX, and every configured MapTiler variant
+  resolve through one catalog contract; arbitrary provider names do not enter
+  source compilation.
 - One MapTiler provider configuration produces Satellite and Hybrid entries
   without exposing its key in catalog or status objects.
 - Updating MapTiler preserves stored records for other provider adapters that
@@ -1041,7 +1052,8 @@ The current suite proves:
 - Changing the key behind an unchanged basemap name changes its fingerprint
   and reapplies the style on a mounted map.
 - Unknown names and unsupported stored schema versions fail visibly and fall
-  back to Liberty; authenticated URLs are redacted from runtime errors.
+  back to OpenFreeMap Liberty; authenticated URLs are redacted from runtime
+  errors.
 - Stale image work is aborted or ignored by its generation guard.
 
 Use the installed style-spec package in focused tests when testing MapLibre
@@ -1068,13 +1080,14 @@ nine existing person pages plus the two native layers shown in Map A. Verify:
 4. Edit one existing person's `Profile Picture` and confirm the feature and
    asset update without requiring a membership change.
 5. Remove or break one image and confirm its ordinary point remains visible.
-6. Change the basemap/style and confirm portraits return after `style.load`.
+6. Preview Liberty, Positron, Bright, Dark, and Fiord. Confirm each OpenFreeMap
+   style loads and portraits return after every `style.load`.
 7. Preview `EOX Satellite Context`; confirm its visible attribution, 2016/10 m
    notice, useful zoom limit, and return to the saved map value.
 8. Add one MapTiler key in the Roam Map settings panel. Use Satellite and
    Hybrid on different maps, rotate the key, and confirm both MapTiler views
-   reload while Liberty and EOX do not. Inspect errors and diagnostics to
-   confirm no authenticated URL is shown.
+   reload while OpenFreeMap and EOX entries do not. Inspect errors and
+   diagnostics to confirm no authenticated URL is shown.
 9. Confirm both same-coordinate people remain distinct and discoverable.
 10. Test a Roam-uploaded file through the supported file API, including an
    encrypted graph when available.
@@ -1087,6 +1100,14 @@ EOX, retained its circular portraits and ordinary points, and showed the
 2016/10 m notice plus visible EOX/Copernicus attribution. Re-run the checks
 above after changing the compiler or runtime; the recorded observation is
 evidence, not a substitute for a new live test.
+
+The later OpenFreeMap catalog follow-up also passed 53 tests, the production
+build, and the bundle guard. The CLI reload explicitly listed `roam-map`. In
+Roam Desktop, the selector exposed Liberty, Positron, Bright, Dark, and Fiord
+as separate OpenFreeMap entries; the People fixture still reported nine
+sources, nine mapped, and zero unmapped after reload. UI automation did not
+complete the five visual style switches, so verification step 6 remains open
+and should not be inferred from successful endpoint requests or unit tests.
 
 When #9 is implemented, add a second map fed by a child native query. Compare
 its feature UIDs, properties, and presentation with the direct map; exercise
@@ -1131,6 +1152,8 @@ document to a settled contract solely because a synthetic unit fixture passes.
 - [`image`](https://maplibre.org/maplibre-style-spec/expressions/#image)
 - [Raster sources](https://maplibre.org/maplibre-style-spec/sources/#raster)
 - [`Map#setStyle`](https://maplibre.org/maplibre-gl-js/docs/API/classes/Map/#setstyle)
+- [OpenFreeMap default styles](https://openfreemap.org/quick_start/)
+- [OpenFreeMap 3D demo implementation](https://openfreemap.org/scripts/map.js)
 - [MapTiler MapLibre styles](https://docs.maptiler.com/maplibre-gl-js/)
 - [MapTiler public-key protection](https://docs.maptiler.com/cloud/api/authentication-key/)
 - [EOxCloudless](https://cloudless.eox.at/)
