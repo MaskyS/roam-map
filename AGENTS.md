@@ -7,7 +7,9 @@ Roam Map is a deliberately narrow Roam Depot extension for persistent maps.
 - Roam owns editing and durable data.
 - Roam Places owns place capture; Roam Map owns source aggregation and map
   rendering.
-- Normalize all sources to page UIDs before reading geographic data.
+- Resolve Roam entity sources through stable UIDs, but do not force map-local
+  coordinates or external features through synthetic pages. Normalize all
+  renderable data to feature records or explicit native resources.
 - Never rewrite user source blocks or location pages as a rendering side effect.
 - Do not use query-result DOM as data. Use the Roam Alpha API.
 - Keep point, geometry, provenance, and layer data independent of MapLibre
@@ -57,8 +59,6 @@ the behavior under consideration.
   - https://roamdocs.fyi/help/examples-of-q-query-blocks
   - https://roamdocs.fyi/help/roam-specific-q-additions
   - https://roamdocs.fyi/developer-documentation/datalog-block-query
-- Search components and the programmatic search API:
-  - https://roamdocs.fyi/developer-documentation/roam-alpha-api
 - Rendering and component surfaces, including the distinction between
   `roam/render`, existing Roam components, and extension-owned React roots:
   - https://roamdocs.fyi/developer-documentation/roam-render
@@ -66,8 +66,24 @@ the behavior under consideration.
 - Roam's current documentation index, release notes, and change log whenever a
   relevant capability may have changed:
   - https://roamdocs.fyi/
-  - https://roamdocs.fyi/developer-documentation/release-notes
+  - https://roamdocs.fyi/llms.txt
+  - https://roamdocs.fyi/developer-documentation/release-notes.md
   - https://roamdocs.fyi/help/change-log
+
+Fetching tip: https://roamdocs.fyi/llms.txt is the machine-readable index of
+every page, and each page has a clean markdown mirror at `<page-url>.md`.
+Prefer fetching those mirrors directly (for example with curl) over HTML
+scraping or summarizing fetch tools, which can drop detail. The release-notes
+page exists only as the `.md` mirror.
+
+Claude Code specifics: do not use the WebFetch tool to read documentation for
+this gate — it answers a prompt against the page through a smaller model and
+compacts away the detail the gate exists to preserve. Read the full page
+yourself instead: curl the `.md` mirror for roamdocs.fyi, and for HTML-only
+references (MapLibre, ProseMirror, GeoJSON RFCs, and similar) convert the page
+with the locally installed defuddle CLI, `defuddle parse <url> --md`, saving to
+a file and reading that. Reserve WebFetch for quick existence checks where
+losing detail does not matter.
 
 Prefer supported APIs over DOM assumptions. If the documentation does not
 provide the required surface, state that clearly and verify the smallest

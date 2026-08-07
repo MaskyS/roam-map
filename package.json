@@ -1,0 +1,26 @@
+{
+  "name": "roam-map",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Compose Roam outlines into live inline maps",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "node build.mjs --watch",
+    "build": "node build.mjs",
+    "test": "node --test",
+    "check:bundle": "node scripts/check-bundle.mjs",
+    "check": "npm run test && npm run build && npm run check:bundle"
+  },
+  "dependencies": {
+    "@maplibre/maplibre-gl-style-spec": "24.10.0",
+    "maplibre-gl": "5.24.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12",
+    "jsdom": "26.1.0"
+  },
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
+}
