@@ -3,10 +3,17 @@ import "./extension.css";
 import { createMapCompiler } from "./map/compiler.js";
 import { createDirectSourceCompiler } from "./map/direct-sources.js";
 import { createPlaceResolver } from "./map/place-records.js";
+import { createPublicApi, installPublicApi } from "./public-api.js";
 import { createRoamApi } from "./roam/api.js";
 import { createBasemapRegistry } from "./settings/basemap-registry.js";
 import { createBasemapSettingsPanel } from "./settings/basemap-settings.jsx";
 import { MapErrorBoundary } from "./ui/map-error-boundary.jsx";
+import {
+  MarkerCard,
+  MarkerCardActions,
+  MarkerCardDetails,
+} from "./ui/marker-card.jsx";
+import { MarkerPopover } from "./ui/marker-popover.jsx";
 import { MapView } from "./ui/map-view.jsx";
 import { createMapMountLifecycle } from "./ui/mount-maps.js";
 
@@ -55,6 +62,7 @@ async function onload({ extensionAPI }) {
       ),
   });
   let stopped = false;
+  let uninstallPublicApi = () => {};
   const runtime = {
     stop() {
       if (stopped) return;
@@ -64,6 +72,11 @@ async function onload({ extensionAPI }) {
       const errors = [];
       try {
         lifecycle.stop();
+      } catch (error) {
+        errors.push(error);
+      }
+      try {
+        uninstallPublicApi();
       } catch (error) {
         errors.push(error);
       }
@@ -82,6 +95,15 @@ async function onload({ extensionAPI }) {
   };
   extensionRuntime = runtime;
   try {
+    uninstallPublicApi = installPublicApi({
+      target: window,
+      publicApi: createPublicApi({
+        MarkerCard,
+        MarkerCardActions,
+        MarkerCardDetails,
+        MarkerPopover,
+      }),
+    });
     await createBasemapSettingsPanel({ extensionAPI, registry: basemaps });
     lifecycle.start();
     await extensionAPI.ui.slashCommand.addCommand({

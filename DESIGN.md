@@ -115,6 +115,33 @@ The people fixture is therefore a test of general value resolution, not a
 separate people-map mode. Advanced configuration should reach the same feature
 properties and render plan through validated MapLibre layer blocks.
 
+Marker interaction is a separate surface. The MapLibre style specification
+does not declare click handlers or popup DOM, so Roam Map accepts one direct
+`Marker click` resource containing JavaScript, JSX, Clojure, or a block
+reference to reusable `roam/render` code. It receives a versioned,
+JSON-serializable click snapshot identifying the clicked pages and features,
+geographic and pixel positions, and modifier keys. Code can render any UI, run
+an effect and return nothing, or read more graph data through the Alpha API.
+This is an explicit arbitrary-code boundary owned by the graph author, not a
+second field-selection, action, or HTML-template language invented by the
+extension.
+
+Overlapping point hit areas are not the same as coincident markers. The adapter
+ranks point hits by distance from the click, while retaining every rendered hit
+for user code. The stock card offers a chooser only when multiple page markers
+project to the same visible point; clicking one of two nearby markers opens the
+nearest one directly.
+
+The React view owns only a neutral marker-click mount. When no custom component
+exists, it uses the stock Blueprint `MarkerPopover` and `MarkerCard`. Those same
+composable components are exported through the versioned `window.RoamMap`
+extension namespace for JS/JSX `roam/render` code; Roam does not document a
+component-registration API. Roam owns each nested custom-component mount
+through its documented `renderString` and `unmountNode` APIs. Repeated clicks
+receive distinct IDs, overlapping MapLibre layers produce one event, and the
+extension unmounts the previous component on replacement or teardown. Opening
+a page uses the documented right-sidebar API.
+
 See [PRESENTATION.md](./PRESENTATION.md) for the complete walkthrough, exact
 MapLibre and Roam references, expression edge cases, and the verification
 contract.

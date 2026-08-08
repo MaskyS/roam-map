@@ -1023,9 +1023,13 @@ central contribution deduplication by page UID, batched graph pulls, validated
 GeoJSON geometry, title-keyed attribute projection, validated native MapLibre
 layers and image assets, named basemaps, a persistent point renderer, focused
 pull watches with stale-generation guards, and visible counts, diagnostics,
-refresh, fit, coincident-feature selection, and page navigation. Query, search,
-and `:q` inputs remain deliberately unimplemented; the parser reports an inline
-argument instead of pretending to execute it.
+refresh, fit, coincident-feature selection, arbitrary user-authored
+`roam/render` marker-click components, a reusable Blueprint stock card, and
+right-sidebar page navigation. Marker-click code receives a versioned,
+serialized event and feature snapshot and is mounted and unmounted through
+Roam's documented component API; clicks never write transient UI state to the
+graph. Query, search, and `:q` inputs remain deliberately unimplemented; the
+parser reports an inline argument instead of pretending to execute it.
 
 Raw GeoJSON sources and a public contribution API deserve separate later
 issues. Validated native layer resources are implemented over the compiled
@@ -1058,6 +1062,15 @@ state, and selection among coincident rendered features. It passed 56 tests,
 the production build, and the bundle guard. No authenticated Roam graph was
 available for a new live seam test, so the live observations below remain the
 latest evidence rather than being silently upgraded.
+
+The marker-click and sidebar checkpoint adds configuration/source separation
+for inline and reusable user code, encoded event boundaries, per-click remount
+identity, documented Roam component cleanup, a versioned public component
+namespace, and exact right-sidebar API calls. That checkpoint passed 67 tests
+before the live graph verification recorded below. The overlapping-marker
+follow-up ranks point hits by screen distance, keeps all rendered hits in the
+public click context, and reserves the stock chooser for coincident marker
+centers. The suite now passes 70 tests.
 
 ## Live experiments still required
 

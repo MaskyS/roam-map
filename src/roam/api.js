@@ -25,8 +25,24 @@ export function createRoamApi(alpha) {
       Promise.resolve(data.addPullWatch(pattern, uidLookup(uid), callback)),
     removePullWatch: (pattern, uid, callback) =>
       Promise.resolve(data.removePullWatch(pattern, uidLookup(uid), callback)),
-    openPage: (uid) =>
-      Promise.resolve(alpha.ui.mainWindow.openPage({ page: { uid } })),
+    openPageInSidebar: (uid) =>
+      Promise.resolve(
+        alpha.ui.rightSidebar.addWindow({
+          window: { type: "outline", "block-uid": uid },
+        }),
+      ),
+    renderRoamString: ({ element, string }) => {
+      if (typeof alpha?.ui?.components?.renderString !== "function") {
+        return Promise.reject(new Error("Roam's renderString component API is unavailable."));
+      }
+      return Promise.resolve(alpha.ui.components.renderString({ el: element, string }));
+    },
+    unmountRoamNode: (element) => {
+      if (typeof alpha?.ui?.components?.unmountNode !== "function") {
+        return Promise.reject(new Error("Roam's component unmount API is unavailable."));
+      }
+      return Promise.resolve(alpha.ui.components.unmountNode({ el: element }));
+    },
     getFile: (url) => {
       if (typeof alpha?.file?.get !== "function") {
         return Promise.reject(new Error("Roam's file API is unavailable."));

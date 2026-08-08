@@ -155,7 +155,7 @@ test("data refreshes reuse one map and fit handles single and multiple points", 
   const runtime = createInlineMapRuntime({
     container: {},
     mapLibrary: fakeLibrary,
-    onSelect: (pageUids) => selected.push(pageUids),
+    onMarkerClick: (event) => selected.push(event),
   });
   const map = FakeMap.instances[0];
   map.emit("load");
@@ -177,13 +177,71 @@ test("data refreshes reuse one map and fit handles single and multiple points", 
   assert.equal(source.data, second);
   assert.deepEqual(map.lastBounds.coordinates, [[57.5, -20.16], [55.5, -21.1]]);
 
-  map.emit("click", { features: [...second.features, second.features[0]] }, MAP_LAYER_ID);
-  assert.deepEqual(selected[0], ["p0", "p1"]);
+  map.emit("click", {
+    features: [...second.features, second.features[0]],
+    point: { x: 12, y: 18 },
+    lngLat: { lng: 57.5, lat: -20.16 },
+    originalEvent: { clientX: 212, clientY: 318, shiftKey: true },
+  });
+  assert.deepEqual(selected[0], {
+    pageUids: ["p0", "p1"],
+    coincidentPageUids: ["p0", "p1"],
+    point: { x: 12, y: 18 },
+    lngLat: { lng: 57.5, lat: -20.16 },
+    clientPoint: { x: 212, y: 318 },
+    modifiers: { altKey: false, ctrlKey: false, metaKey: false, shiftKey: true },
+  });
 
   runtime.remove();
   runtime.remove();
   assert.equal(map.removed, true);
   assert.equal(map.events.size, 0);
+});
+
+test("overlapping nearby markers select the point nearest the click", () => {
+  FakeMap.instances.length = 0;
+  const selected = [];
+  const runtime = createInlineMapRuntime({
+    container: {},
+    mapLibrary: fakeLibrary,
+    onMarkerClick: (event) => selected.push(event),
+  });
+  const map = FakeMap.instances[0];
+  const data = collection([10, 10], [14, 10]);
+  runtime.setData(data);
+  map.project = ([x, y]) => ({ x, y });
+
+  map.emit("click", {
+    features: [data.features[1], data.features[0]],
+    point: { x: 11, y: 10 },
+  });
+
+  assert.deepEqual(selected[0].pageUids, ["p0", "p1"]);
+  assert.deepEqual(selected[0].coincidentPageUids, ["p0"]);
+  runtime.remove();
+});
+
+test("markers at the same visible point remain available in the chooser", () => {
+  FakeMap.instances.length = 0;
+  const selected = [];
+  const runtime = createInlineMapRuntime({
+    container: {},
+    mapLibrary: fakeLibrary,
+    onMarkerClick: (event) => selected.push(event),
+  });
+  const map = FakeMap.instances[0];
+  const data = collection([10, 10], [10, 10]);
+  runtime.setData(data);
+  map.project = ([x, y]) => ({ x, y });
+
+  map.emit("click", {
+    features: data.features,
+    point: { x: 10, y: 10 },
+  });
+
+  assert.deepEqual(selected[0].pageUids, ["p0", "p1"]);
+  assert.deepEqual(selected[0].coincidentPageUids, ["p0", "p1"]);
+  runtime.remove();
 });
 
 test("native layers share the compiled source and runtime images survive style replacement", async () => {
@@ -208,7 +266,7 @@ test("native layers share the compiled source and runtime images survive style r
         ],
       };
     },
-    onSelect: (pageUids) => selected.push(pageUids),
+    onMarkerClick: (event) => selected.push(event),
   });
   const map = FakeMap.instances[0];
   map.emit("load");
@@ -238,8 +296,9 @@ test("native layers share the compiled source and runtime images survive style r
 
   const data = collection([57.5, -20.16]);
   runtime.setData(data);
-  map.emit("click", { features: [data.features[0]] }, "people-portraits");
-  assert.deepEqual(selected[0], ["p0"]);
+  map.emit("click", { features: [data.features[0]] });
+  assert.deepEqual(selected[0].pageUids, ["p0"]);
+  assert.deepEqual(selected[0].coincidentPageUids, ["p0"]);
 
   runtime.setBasemap("satellite");
   assert.ok(map.getLayer("people-portraits"));
@@ -258,7 +317,7 @@ test("native layers share the compiled source and runtime images survive style r
 
   runtime.setLayers([]);
   assert.equal(map.getLayer("people-portraits"), null);
-  assert.equal(map.events.has("click:people-portraits"), false);
+  assert.equal(map.events.has("mouseenter:people-portraits"), false);
   runtime.remove();
 });
 

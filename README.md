@@ -35,9 +35,209 @@ reported because the first MapLibre layer deliberately draws points only.
 
 The map shows source, mapped, and unmapped counts; diagnostics for skipped or
 ambiguous inputs; explicit Refresh and Fit actions; and a selected-place card
-that opens the stable page UID in Roam. The MapLibre instance survives source
-refreshes, and automatic fitting happens only for the first non-empty result so
-later graph edits do not discard the user's viewport.
+that opens the stable page UID in Roam's right sidebar. The MapLibre instance
+survives source refreshes, and automatic fitting happens only for the first
+non-empty result so later graph edits do not discard the user's viewport.
+
+### User-defined marker clicks
+
+MapLibre exposes click events through JavaScript rather than through the style
+specification. Roam Map therefore treats marker interaction as an optional
+user-authored `roam/render` component, not as a list of popup fields. A direct
+child named `Marker click` replaces the stock card completely. It may render a
+card or other UI, create a portal, run an effect such as sound or confetti and
+return `null`, or combine those behaviors.
+
+````text
+{{map}}
+  [[[[Efforts]]/Coral Vita]]
+  Marker click
+    ```jsx
+    function effortMarkerClick({ args }) {
+      const context = JSON.parse(decodeURIComponent(args[1]));
+      const {
+        MarkerCard,
+        MarkerCardActions,
+        MarkerCardDetails,
+        MarkerPopover,
+      } = window.RoamMap.components;
+
+      const pageAttributesPull = `[
+        {:harc/_e [
+          {:harc/a [:node/title]}
+          {:harc/v [:node/title :block/string :harc/v-string :harc.text/string]}
+        ]}
+        {:block/children [
+          :block/string
+          {:harc/_e [
+            {:harc/a [:node/title]}
+            {:harc/v [:node/title :block/string :harc/v-string :harc.text/string]}
+          ]}
+          {:block/children [:block/string]}
+        ]}
+      ]`;
+
+      const toArray = (value) =>
+        value == null ? [] : Array.isArray(value) ? value : [value];
+
+      function displayValue(value) {
+        if (["string", "number", "boolean"].includes(typeof value)) return value;
+        return value?.[":node/title"] ??
+          value?.[":block/string"] ??
+          value?.[":harc/v-string"] ??
+          value?.[":harc.text/string"] ??
+          null;
+      }
+
+      function addAttribute(attributes, title, rawValue) {
+        const name = typeof title === "string" ? title.trim() : "";
+        const display = displayValue(rawValue);
+        const value = typeof display === "string" ? display.trim() : display;
+        if (!name || value == null || value === "") return;
+
+        const values = attributes[name] ?? (attributes[name] = []);
+        if (!values.includes(value)) values.push(value);
+      }
+
+      function collectCurrentAttributes(attributes, entity) {
+        for (const relation of toArray(entity?.[":harc/_e"])) {
+          const title = toArray(relation[":harc/a"])[0]?.[":node/title"];
+          for (const value of toArray(relation[":harc/v"])) {
+            addAttribute(attributes, title, value);
+          }
+        }
+      }
+
+      function collectAttributeBlock(attributes, block) {
+        const source = String(block?.[":block/string"] ?? "");
+        const separator = source.indexOf("::");
+        if (separator < 1) return;
+        addAttribute(attributes, source.slice(0, separator), source.slice(separator + 2));
+      }
+
+      function readPageAttributes(pageUid) {
+        const page = window.roamAlphaAPI.data.pull(
+          pageAttributesPull,
+          [":block/uid", pageUid]
+        );
+        const attributes = {};
+
+        // Read current HARC attributes and compatibility `Attribute:: value` blocks.
+        collectCurrentAttributes(attributes, page);
+        for (const child of toArray(page?.[":block/children"])) {
+          collectCurrentAttributes(attributes, child);
+          const attributeBlocks = child[":block/string"] === "roam/meta::"
+            ? toArray(child[":block/children"])
+            : [child];
+          attributeBlocks.forEach((block) => collectAttributeBlock(attributes, block));
+        }
+        return attributes;
+      }
+
+      const firstValue = (attributes, title) => attributes[title]?.[0] ?? null;
+
+      function imageUrlFromMarkdown(value) {
+        if (typeof value !== "string") return null;
+        return value.trim().match(/^!\[[^\]]*\]\((https?:\/\/.+)\)$/)?.[1] ?? null;
+      }
+
+      return (
+        <MarkerPopover context={context}>
+          {({ close }) => (
+            <MarkerCard context={context} onClose={close}>
+              {(card) => {
+                const attributes = readPageAttributes(card.pageUid);
+                const imageUrl = imageUrlFromMarkdown(firstValue(attributes, "Image"));
+                const description = firstValue(attributes, "Description");
+                const website = firstValue(attributes, "URL");
+                const label = card.feature.properties["roam/label"];
+                return (
+                  <>
+                    {imageUrl && (
+                      <img
+                        src={imageUrl}
+                        alt={label}
+                        style={{ width: "100%", height: 110, objectFit: "contain" }}
+                      />
+                    )}
+                    <MarkerCardDetails {...card} />
+                    {description && <p>{description}</p>}
+                    {typeof website === "string" && (
+                      <a href={website} target="_blank" rel="noreferrer">
+                        Visit website ↗
+                      </a>
+                    )}
+                    <MarkerCardActions {...card} />
+                  </>
+                );
+              }}
+            </MarkerCard>
+          )}
+        </MarkerPopover>
+      );
+    }
+    ```
+````
+
+The child may instead be one exact block reference to reusable `roam/render`
+code. JavaScript, JSX, and Clojure code blocks are accepted. With `Marker click`
+present, Roam Map adds no close button, page selector, or sidebar action of its
+own; those belong to the user's component.
+
+`args[1]` is a URI-encoded JSON object with `version`, `mapUid`, a per-map
+`clickId`, `pageUid`, `pageUids`, `coincidentPageUids`, `feature`, `features`,
+`point`, `lngLat`, `clientPoint`, and keyboard `modifiers`. The feature fields
+are a snapshot of the click. `pageUid` is the nearest marker, `pageUids` keeps
+every rendered hit, and `coincidentPageUids` contains the pages at that same
+visible marker position. `pageUid` lets code read any additional graph data
+through the Alpha API; the example pulls `Image::`, `URL::`, and `Description::`
+itself. Every marker click gets a new `clickId`, including a repeated click on
+the same marker, while an unrelated graph refresh does not replay the click
+component. Encoding keeps arbitrary property text from changing the generated
+component invocation. Reusable referenced code receives a focused pull watch.
+
+An effect-only component is valid:
+
+```javascript
+function markerSound({ args }) {
+  const context = JSON.parse(decodeURIComponent(args[1]));
+  React.useEffect(() => {
+    const sound = new Audio("https://example.com/chime.mp3");
+    void sound.play().catch(() => {}); // browser media policy still applies
+    return () => {
+      sound.pause();
+      sound.currentTime = 0;
+    };
+  }, [context.clickId]);
+  return null;
+}
+```
+
+When there is no `Marker click` block, the extension uses its stock Blueprint
+popover and card. The same pieces are available to JS/JSX `roam/render` code
+under the versioned `window.RoamMap.components` namespace:
+
+- `MarkerPopover` anchors a controlled Blueprint 3 Popover to `context.point`.
+  It forwards other Blueprint Popover props, and a function child receives
+  `{close, isOpen}`.
+- `MarkerCard` accepts `context`, `className`, `style`, `initialPageUid`,
+  `onPageChange`, `onClose`, `openPageInSidebar`, `showCloseButton`, and
+  `showPageSelector`, and forwards remaining props to Blueprint's `Card`. A
+  function child receives the active page and feature, `close`,
+  `openInSidebar`, and action state.
+- `MarkerCardDetails` and `MarkerCardActions` are the stock replaceable body and
+  footer, so user code can extend the default without copying it.
+
+Roam does not document an extension component registry. `window.RoamMap` is a
+small public API owned and versioned by this extension, installed on load and
+removed on unload; it is available only while Roam Map is enabled.
+
+This is arbitrary graph code, with the same trust implications as any other
+`roam/render` component. Roam's custom-components setting must be enabled. Roam
+Map invokes the code through the documented `renderString` API and calls
+`unmountNode` during cleanup. The component is replaced on the
+next marker click and removed with the map occurrence or extension; Roam Map
+does not evaluate its source or rewrite graph blocks on marker clicks.
 
 ## Presentation paths
 

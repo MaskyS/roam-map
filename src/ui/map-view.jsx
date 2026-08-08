@@ -4,6 +4,10 @@ import { createLiveMapSession } from "../map/live-session.js";
 import { createImageAssetLoader } from "../maplibre/image-assets.js";
 import { createInlineMapRuntime } from "../maplibre/runtime.js";
 import { safeBasemapError } from "../settings/basemap-registry.js";
+import { MarkerCard } from "./marker-card.jsx";
+import { createMarkerClickContext } from "./marker-click-context.js";
+import { MarkerPopover } from "./marker-popover.jsx";
+import { RoamMarkerClick } from "./roam-marker-click.jsx";
 
 const React = window.React;
 
@@ -41,7 +45,7 @@ function DiagnosticList({ diagnostics, onOpenPage }) {
                 className="bp3-button bp3-minimal bp3-small"
                 onClick={() => onOpenPage(diagnostic.pageUid)}
               >
-                Open page
+                Open in sidebar
               </button>
             ) : null}
           </li>
@@ -116,7 +120,7 @@ function useLiveMap({ api, compiler, definitionUid }) {
   return { ...state, refresh };
 }
 
-function useInlineMapRuntime({ api, basemaps, containerRef, onSelect }) {
+function useInlineMapRuntime({ api, basemaps, containerRef, onMarkerClick }) {
   const [runtime, setRuntime] = React.useState(null);
   const [mapError, setMapError] = React.useState(null);
   const [basemapStatus, setBasemapStatus] = React.useState(() =>
@@ -139,7 +143,7 @@ function useInlineMapRuntime({ api, basemaps, containerRef, onSelect }) {
         container: containerRef.current,
         loadAsset: createImageAssetLoader({ getFile: api.getFile }),
         resolveBasemap: (reference) => basemaps.resolve(reference),
-        onSelect,
+        onMarkerClick,
         onError: setMapError,
         onBasemap: setBasemapStatus,
         onAssetError: ({ asset, error }) => {
@@ -169,7 +173,7 @@ function useInlineMapRuntime({ api, basemaps, containerRef, onSelect }) {
       resizeObserver?.disconnect();
       nextRuntime?.remove();
     };
-  }, [api.getFile, basemaps, containerRef, onSelect]);
+  }, [api.getFile, basemaps, containerRef, onMarkerClick]);
 
   return {
     runtime,
@@ -192,6 +196,8 @@ function featuresByPageUid(result) {
 export function MapView({ definitionUid, hostUid, api, basemaps, compiler }) {
   const containerRef = React.useRef(null);
   const hasFitRef = React.useRef(false);
+  const clickIdRef = React.useRef(0);
+  const resultRef = React.useRef(null);
   const [preview, setPreview] = React.useState(null);
   const [selection, setSelection] = React.useState(null);
   const [actionError, setActionError] = React.useState(null);
@@ -201,9 +207,37 @@ export function MapView({ definitionUid, hostUid, api, basemaps, compiler }) {
     compiler,
     definitionUid,
   });
-  const handleSelect = React.useCallback(
-    (pageUids) => setSelection({ pageUids, activeUid: pageUids[0] }),
-    [],
+  React.useLayoutEffect(() => {
+    resultRef.current = result;
+  }, [result]);
+
+  const handleMarkerClick = React.useCallback(
+    (event) => {
+      const currentResult = resultRef.current;
+      const featureIndex = featuresByPageUid(currentResult);
+      const pageUids = event.pageUids.filter((pageUid) => featureIndex.has(pageUid));
+      const coincidentPageUids = (event.coincidentPageUids ?? pageUids).filter(
+        (pageUid) => featureIndex.has(pageUid),
+      );
+      const features = pageUids.map((pageUid) => featureIndex.get(pageUid));
+      if (features.length === 0) return;
+      clickIdRef.current += 1;
+      setSelection({
+        context: createMarkerClickContext({
+          mapUid: definitionUid,
+          clickId: clickIdRef.current,
+          pageUids,
+          coincidentPageUids,
+          features,
+          point: event.point,
+          lngLat: event.lngLat,
+          clientPoint: event.clientPoint,
+          modifiers: event.modifiers,
+        }),
+        component: currentResult?.markerClick ?? null,
+      });
+    },
+    [definitionUid],
   );
   const {
     runtime,
@@ -212,7 +246,12 @@ export function MapView({ definitionUid, hostUid, api, basemaps, compiler }) {
     assetDiagnostics,
     clearAssetDiagnostics,
     reportMapError,
-  } = useInlineMapRuntime({ api, basemaps, containerRef, onSelect: handleSelect });
+  } = useInlineMapRuntime({
+    api,
+    basemaps,
+    containerRef,
+    onMarkerClick: handleMarkerClick,
+  });
 
   const configuredBasemap = result?.options?.basemap ?? DEFAULT_MAP_OPTIONS.basemap;
   const activePreview = preview?.basedOn === configuredBasemap ? preview : null;
@@ -246,13 +285,6 @@ export function MapView({ definitionUid, hostUid, api, basemaps, compiler }) {
     runtime?.setBasemap(requestedBasemap);
   }, [basemapRevision, requestedBasemap, runtime]);
 
-  const featureIndex = featuresByPageUid(result);
-  const selectedPageUids = (selection?.pageUids ?? []).filter((uid) => featureIndex.has(uid));
-  const activePageUid = selectedPageUids.includes(selection?.activeUid)
-    ? selection.activeUid
-    : selectedPageUids[0] ?? null;
-  const selectedFeature = activePageUid ? featureIndex.get(activePageUid) : null;
-  const selectedProperties = selectedFeature?.properties ?? null;
   const counts = result?.counts ?? { sources: 0, mapped: 0, unmapped: 0 };
   const diagnostics = [...(result?.diagnostics ?? []), ...assetDiagnostics];
   const emptyMessage =
@@ -262,9 +294,9 @@ export function MapView({ definitionUid, hostUid, api, basemaps, compiler }) {
         ? "None of the current sources has a renderable point."
         : null;
 
-  function openPage(pageUid) {
+  function openPageInSidebar(pageUid) {
     setActionError(null);
-    void api.openPage(pageUid).catch(setActionError);
+    void api.openPageInSidebar(pageUid).catch(setActionError);
   }
 
   return (
@@ -341,53 +373,32 @@ export function MapView({ definitionUid, hostUid, api, basemaps, compiler }) {
         <div className="rrm-map" ref={containerRef} />
         {phase === "loading" ? <div className="rrm-state">Reading map sources…</div> : null}
         {emptyMessage && phase !== "loading" ? <div className="rrm-state">{emptyMessage}</div> : null}
-        {selectedProperties ? (
-          <aside className="rrm-selection" aria-live="polite">
-            <button
-              type="button"
-              className="rrm-selection-close"
-              aria-label="Close selected place"
-              onClick={() => setSelection(null)}
-            >
-              ×
-            </button>
-            {selectedPageUids.length > 1 ? (
-              <select
-                aria-label="Selected place"
-                value={activePageUid}
-                onChange={(event) =>
-                  setSelection((current) => ({ ...current, activeUid: event.target.value }))
-                }
+        {selection ? (
+          <div className="rrm-marker-click-slot">
+            {selection.component ? (
+              <RoamMarkerClick
+                api={api}
+                codeBlockUid={selection.component.codeBlockUid}
+                context={selection.context}
+              />
+            ) : (
+              <MarkerPopover
+                key={selection.context.clickId}
+                context={selection.context}
+                onInteraction={(isOpen) => {
+                  if (!isOpen) setSelection(null);
+                }}
               >
-                {selectedPageUids.map((pageUid) => {
-                  const properties = featureIndex.get(pageUid).properties;
-                  return (
-                    <option key={pageUid} value={pageUid}>
-                      {properties[FEATURE_PROPERTIES.label] ??
-                        properties[FEATURE_PROPERTIES.title] ??
-                        "Place"}
-                    </option>
-                  );
-                })}
-              </select>
-            ) : null}
-            <strong>
-              {selectedProperties[FEATURE_PROPERTIES.label] ??
-                selectedProperties[FEATURE_PROPERTIES.title] ??
-                "Place"}
-            </strong>
-            {selectedProperties[FEATURE_PROPERTIES.address] &&
-            selectedProperties[FEATURE_PROPERTIES.address] !== "null" ? (
-              <span>{selectedProperties[FEATURE_PROPERTIES.address]}</span>
-            ) : null}
-            <button
-              type="button"
-              className="bp3-button bp3-small bp3-intent-primary"
-              onClick={() => openPage(activePageUid)}
-            >
-              Open page
-            </button>
-          </aside>
+                {({ close }) => (
+                  <MarkerCard
+                    context={selection.context}
+                    onClose={close}
+                    openPageInSidebar={api.openPageInSidebar}
+                  />
+                )}
+              </MarkerPopover>
+            )}
+          </div>
         ) : null}
       </div>
 
@@ -402,7 +413,7 @@ export function MapView({ definitionUid, hostUid, api, basemaps, compiler }) {
           Live refresh could not subscribe; use Refresh. {readableError(watchFailures[0].error)}
         </div>
       ) : null}
-      <DiagnosticList diagnostics={diagnostics} onOpenPage={openPage} />
+      <DiagnosticList diagnostics={diagnostics} onOpenPage={openPageInSidebar} />
     </section>
   );
 }

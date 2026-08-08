@@ -41,6 +41,7 @@ test("the central compiler merges provenance and resolves distinct pages in one 
         watchUids: [],
         options: { basemap: "streets" },
         layers: [],
+        markerClick: { codeBlockUid: "marker-click-code", language: "jsx" },
         diagnostics: [],
       }),
     },
@@ -64,4 +65,8 @@ test("the central compiler merges provenance and resolves distinct pages in one 
     result.featureCollection.features[0].properties[FEATURE_PROPERTIES.sourceBlockUids],
     ["source-a", "source-a-again"],
   );
+  assert.deepEqual(result.markerClick, {
+    codeBlockUid: "marker-click-code",
+    language: "jsx",
+  });
 });

@@ -135,17 +135,84 @@
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 2px 8px rgba(16, 22, 26, 0.25);
   color: #182026;
+  pointer-events: auto;
+}
+
+.rrm-marker-card-controls {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+}
+
+.rrm-marker-card-details {
+  display: grid;
+  gap: 5px;
+}
+
+.rrm-selection--floating-close .rrm-marker-card-details {
+  padding-right: 24px;
+}
+
+.rrm-marker-page-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.rrm-marker-page-select select {
+  width: 100%;
+  max-width: 100%;
 }
 
 .rrm-selection-close {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.rrm-selection-close--floating {
   position: absolute;
-  top: 2px;
+  z-index: 1;
+  top: 4px;
   right: 4px;
-  border: 0;
-  background: transparent;
-  color: #5c7080;
-  cursor: pointer;
-  font-size: 17px;
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.rrm-marker-click-slot {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.rrm-marker-click-component {
+  display: contents;
+}
+
+.rrm-marker-popover .rrm-selection {
+  position: relative;
+  left: auto;
+  bottom: auto;
+  min-width: min(260px, calc(100vw - 90px));
+  max-width: min(360px, calc(100vw - 40px));
+  overflow-wrap: anywhere;
+}
+
+.rrm-marker-click-error,
+.rrm-marker-card-error {
+  padding: 5px 7px;
+  border-radius: 3px;
+  background: #fff3f2;
+  color: #a82a2a;
+  font-size: 12px;
+}
+
+.rrm-marker-click-error {
+  position: absolute;
+  left: 10px;
+  bottom: 24px;
+  max-width: min(360px, calc(100% - 20px));
+  pointer-events: auto;
 }
 
 .rrm-error,

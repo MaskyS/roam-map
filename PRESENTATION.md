@@ -145,6 +145,75 @@ geometry, and properties. The MapLibre style specification separates [data
 sources](https://maplibre.org/maplibre-style-spec/sources/) from the
 [layers](https://maplibre.org/maplibre-style-spec/layers/) that present them.
 
+## Marker-click behavior is user code, not layer JSON
+
+MapLibre's documented layer-click example listens for `click`, reads the
+clicked feature, and creates popup content in application code. Neither its
+layer specification nor its expression language describes arbitrary popup DOM.
+Roam Map therefore does not overload `MapLibre layer` or introduce a list of
+special popup fields or actions.
+
+One direct `Marker click` block may instead contain arbitrary JavaScript, JSX,
+or Clojure accepted by Roam's `roam/render`, or reference reusable code
+elsewhere. At click time Roam Map supplies a URI-encoded, versioned JSON
+snapshot:
+
+```js
+{
+  version: 1,
+  mapUid,
+  clickId,  // increments for every click, including the same marker twice
+  pageUid,  // the marker nearest the click
+  pageUids, // every distinct rendered hit, nearest first
+  coincidentPageUids, // pages sharing the selected visible marker position
+  feature,  // the feature for pageUid
+  features, // compiled GeoJSON snapshots in the same order as pageUids
+  point,    // {x, y} relative to the map canvas
+  lngLat,   // {lng, lat}
+  clientPoint, // {x, y} relative to the browser viewport
+  modifiers   // altKey, ctrlKey, metaKey, shiftKey
+}
+```
+
+The component can lay out any React/JSX UI, create a portal, query graph data
+such as `Image::` through the Alpha API, call other supported libraries, or run
+an effect and return `null`. With `Marker click` present, the extension adds no
+card, close control, coincident selector, or page action. Without it, the stock
+Blueprint popover and card provide selection and **Open in sidebar**. When two
+marker circles merely overlap, the nearest center wins and no chooser appears.
+The chooser remains for pages whose marker centers coincide within one screen
+pixel.
+
+Every user click creates a new `clickId` and therefore a fresh component mount;
+clicking the same marker twice can play an effect twice. The event context and
+selected feature data are snapshots, so an unrelated graph refresh cannot
+replay a sound or animation. One map-level listener queries every interactive
+layer together, preventing one physical click from firing once per overlapping
+MapLibre layer.
+
+This path deliberately uses Roam's existing arbitrary-code permission model.
+The extension passes a generated `{{roam/render: ...}}` string to the documented
+`roamAlphaAPI.ui.components.renderString` API and symmetrically calls
+`unmountNode`; it neither evaluates code itself nor writes transient selection
+state into the graph. Treat a map containing a Marker click component exactly
+as any other graph content containing `roam/render` code.
+
+Roam's current extension API does not register components for `roam/render`.
+Roam Map instead publishes a small versioned JS/JSX API at
+`window.RoamMap.components`: `MarkerPopover`, `MarkerCard`,
+`MarkerCardDetails`, and `MarkerCardActions`. The stock fallback uses those same
+components. `MarkerCard` exposes the active page and feature, close and sidebar
+actions, and action state to a render-function child, so a graph author can
+reuse, extend, or replace its interior without copying the controller logic.
+`MarkerPopover` forwards Blueprint 3 Popover props and exposes its close state
+to a function child. The namespace is installed and removed with the extension.
+
+Image Markdown remains an opaque runtime ID in feature properties, preserving
+the MapLibre expression and asset boundary. Roam-backed component code should
+use `pageUid` and the Alpha API to read the original `Image::` value. That keeps
+graph reads in user code instead of exposing the map's internal asset records
+as a click-component API.
+
 ## Sources determine membership, not presentation
 
 A page can enter a map through a direct child page reference, a reusable
@@ -1072,6 +1141,18 @@ The current suite proves:
   whose asynchronous registration finishes after replacement or disposal.
 - Clicking coincident rendered features exposes every distinct page UID for
   selection instead of silently choosing the top-painted feature.
+- Marker click blocks are configuration rather than source leaves; inline and
+  reusable code preserve stable UIDs, and reusable code adds a focused watch.
+- Marker-click contexts encode arbitrary property text without permitting it to alter
+  the generated `roam/render` invocation.
+- Repeated clicks get distinct IDs, while graph refreshes do not replay a
+  previously captured click.
+- One map-level click query deduplicates overlapping interactive layers.
+- Marker-click contexts identify selected pages without exposing internal image
+  descriptors; component code can read `Image::` through the Alpha API.
+- The stock public components share Roam's Blueprint 3 and React 18 runtimes
+  and the `window.RoamMap` namespace is removed on extension unload.
+- Page actions use Roam's documented right-sidebar outline window.
 
 Use the installed style-spec package in focused tests when testing MapLibre
 semantics. In particular, verify the difference between an unavailable image

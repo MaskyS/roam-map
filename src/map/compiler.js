@@ -131,6 +131,7 @@ export function createMapCompiler({ sourceCompiler, placeResolver }) {
       featureCollection: { type: "FeatureCollection", features },
       options: source.options,
       layers: source.layers ?? [],
+      markerClick: source.markerClick ?? null,
       assets: [...assets.values()],
       diagnostics: uniqueDiagnostics(diagnostics),
       counts: {

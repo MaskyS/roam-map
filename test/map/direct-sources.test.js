@@ -120,3 +120,25 @@ test("map/basemap is configuration rather than a source contribution", async () 
   assert.deepEqual(result.contributions.map(({ pageUid }) => pageUid), ["curepipe-page"]);
   assert.deepEqual(result.diagnostics, []);
 });
+
+test("Marker click code is configuration rather than a source contribution", async () => {
+  const markerClickCode = block(
+    "marker-click-code",
+    0,
+    "```javascript\nfunction markerClick() { return null; }\n```",
+  );
+  const markerClick = block("marker-click", 0, "Marker click", [], [markerClickCode]);
+  const place = block("place", 1, "[[Port Louis]]", [pageRef("port", "Port Louis")]);
+  const compiler = createDirectSourceCompiler({
+    pull: async () => block("map", 0, "{{map}}", [], [markerClick, place]),
+  });
+
+  const result = await compiler.compile("map");
+
+  assert.deepEqual(result.markerClick, {
+    codeBlockUid: "marker-click-code",
+    language: "javascript",
+  });
+  assert.deepEqual(result.contributions.map(({ pageUid }) => pageUid), ["port"]);
+  assert.deepEqual(result.diagnostics, []);
+});

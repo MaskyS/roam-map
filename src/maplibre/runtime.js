@@ -25,6 +25,7 @@ export const MAP_LAYER_ID = DEFAULT_POINT_LAYER_ID;
 export const SATELLITE_TILE_URL = EOX_SATELLITE_TILE_URL;
 
 const EMPTY_COLLECTION = Object.freeze({ type: "FeatureCollection", features: [] });
+const COINCIDENT_MARKER_TOLERANCE_PX = 1;
 
 export function satelliteMapStyle() {
   return eoxSatelliteStyle();
@@ -68,6 +69,125 @@ function copyLayer(layer) {
   return JSON.parse(JSON.stringify(layer));
 }
 
+function finitePoint(value, first, second) {
+  return Number.isFinite(value?.[first]) && Number.isFinite(value?.[second])
+    ? { [first]: value[first], [second]: value[second] }
+    : null;
+}
+
+function pageUidFromFeature(feature) {
+  return feature?.properties?.[FEATURE_PROPERTIES.pageUid] ?? null;
+}
+
+function distinctPageUids(features) {
+  const pageUids = [];
+  const seen = new Set();
+  for (const feature of features) {
+    const pageUid = pageUidFromFeature(feature);
+    if (!pageUid || seen.has(pageUid)) continue;
+    seen.add(pageUid);
+    pageUids.push(pageUid);
+  }
+  return pageUids;
+}
+
+function distanceSquared(first, second) {
+  return (first.x - second.x) ** 2 + (first.y - second.y) ** 2;
+}
+
+function markerHitSelection({ renderedFeatures, collection, map, clickPoint }) {
+  const renderedPageUids = distinctPageUids(renderedFeatures);
+  const fallbackHitSelection = {
+    pageUids: renderedPageUids,
+    coincidentPageUids: renderedPageUids,
+  };
+  const point = finitePoint(clickPoint, "x", "y");
+  if (!point || typeof map.project !== "function") return fallbackHitSelection;
+
+  const sourceFeatures = new Map(
+    (collection?.features ?? [])
+      .map((feature) => [pageUidFromFeature(feature), feature])
+      .filter(([pageUid]) => pageUid),
+  );
+  const projectedHits = renderedPageUids.map((pageUid, index) => {
+    const geometry = sourceFeatures.get(pageUid)?.geometry;
+    const coordinates = geometry?.coordinates;
+    if (
+      geometry?.type !== "Point" ||
+      !Array.isArray(coordinates) ||
+      !Number.isFinite(coordinates[0]) ||
+      !Number.isFinite(coordinates[1])
+    ) {
+      return null;
+    }
+    try {
+      const projectedPoint = finitePoint(map.project(coordinates), "x", "y");
+      return projectedPoint
+        ? {
+            pageUid,
+            projectedPoint,
+            distanceFromClick: distanceSquared(projectedPoint, point),
+            renderedOrder: index,
+          }
+        : null;
+    } catch {
+      return null;
+    }
+  });
+
+  // Preserve the old all-hit behavior for mixed or unresolved geometries. The
+  // proximity rule is specifically for point markers whose centers we can compare.
+  if (projectedHits.some((hit) => hit === null)) return fallbackHitSelection;
+
+  projectedHits.sort(
+    (first, second) =>
+      first.distanceFromClick - second.distanceFromClick ||
+      first.renderedOrder - second.renderedOrder,
+  );
+  const primaryPoint = projectedHits[0]?.projectedPoint;
+  const toleranceSquared = COINCIDENT_MARKER_TOLERANCE_PX ** 2;
+  return {
+    pageUids: projectedHits.map(({ pageUid }) => pageUid),
+    coincidentPageUids: primaryPoint
+      ? projectedHits
+          .filter(
+            ({ projectedPoint }) =>
+              distanceSquared(projectedPoint, primaryPoint) <= toleranceSquared,
+          )
+          .map(({ pageUid }) => pageUid)
+      : [],
+  };
+}
+
+function markerClickEvent(event, map, { pageUids, coincidentPageUids }) {
+  const point = finitePoint(event?.point, "x", "y");
+  const lngLat = finitePoint(event?.lngLat, "lng", "lat");
+  const originalEvent = event?.originalEvent;
+  const nativeClientPoint = finitePoint(originalEvent, "clientX", "clientY");
+  let clientPoint = nativeClientPoint
+    ? { x: nativeClientPoint.clientX, y: nativeClientPoint.clientY }
+    : null;
+  if (!clientPoint && point) {
+    const bounds = map.getCanvas?.()?.getBoundingClientRect?.();
+    if (Number.isFinite(bounds?.left) && Number.isFinite(bounds?.top)) {
+      clientPoint = { x: bounds.left + point.x, y: bounds.top + point.y };
+    }
+  }
+  return {
+    pageUids,
+    coincidentPageUids,
+    point,
+    lngLat,
+    clientPoint,
+    modifiers: {
+      altKey: Boolean(originalEvent?.altKey),
+      ctrlKey: Boolean(originalEvent?.ctrlKey),
+      metaKey: Boolean(originalEvent?.metaKey),
+      shiftKey: Boolean(originalEvent?.shiftKey),
+    },
+  };
+}
+
 export function createInlineMapRuntime({
   container,
   mapLibrary = maplibregl,
@@ -75,7 +195,7 @@ export function createInlineMapRuntime({
   basemap = DEFAULT_MAP_OPTIONS.basemap,
   loadAsset = null,
   resolveBasemap = resolveBuiltInBasemap,
-  onSelect,
+  onMarkerClick,
   onError,
   onAssetError,
   onBasemap,
@@ -174,15 +294,15 @@ export function createInlineMapRuntime({
       event?.point && typeof map.queryRenderedFeatures === "function"
         ? map.queryRenderedFeatures(event.point, { layers: [...interactiveLayerIds] })
         : event?.features ?? [];
-    const pageUids = [];
-    const seen = new Set();
-    for (const feature of features) {
-      const pageUid = feature?.properties?.[FEATURE_PROPERTIES.pageUid];
-      if (!pageUid || seen.has(pageUid)) continue;
-      seen.add(pageUid);
-      pageUids.push(pageUid);
+    const markerHits = markerHitSelection({
+      renderedFeatures: features,
+      collection: currentData,
+      map,
+      clickPoint: event?.point,
+    });
+    if (markerHits.pageUids.length > 0) {
+      onMarkerClick?.(markerClickEvent(event, map, markerHits));
     }
-    if (pageUids.length > 0) onSelect?.(pageUids);
   }
 
   function handlePointerEnter() {
@@ -197,7 +317,6 @@ export function createInlineMapRuntime({
 
   function addLayerInteractions(layerId) {
     if (interactiveLayerIds.has(layerId)) return;
-    map.on("click", layerId, handleFeatureClick);
     map.on("mouseenter", layerId, handlePointerEnter);
     map.on("mouseleave", layerId, handlePointerLeave);
     interactiveLayerIds.add(layerId);
@@ -205,7 +324,6 @@ export function createInlineMapRuntime({
 
   function removeLayerInteractions(layerId) {
     if (!interactiveLayerIds.has(layerId)) return;
-    map.off("click", layerId, handleFeatureClick);
     map.off("mouseenter", layerId, handlePointerEnter);
     map.off("mouseleave", layerId, handlePointerLeave);
     interactiveLayerIds.delete(layerId);
@@ -284,6 +402,7 @@ export function createInlineMapRuntime({
   map.on("load", handleLoad);
   map.on("style.load", handleStyleLoad);
   map.on("error", handleError);
+  map.on("click", handleFeatureClick);
   notifyBasemap();
 
   async function setAssets(assets = []) {
@@ -396,9 +515,10 @@ export function createInlineMapRuntime({
       map.off("load", handleLoad);
       map.off("style.load", handleStyleLoad);
       map.off("error", handleError);
+      map.off("click", handleFeatureClick);
       map.remove();
     },
   };
 }
 
-export const __test = { pointCoordinates };
+export const __test = { markerClickEvent, markerHitSelection, pointCoordinates };

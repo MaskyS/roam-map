@@ -2,6 +2,7 @@
 // Deduplication is intentionally left to the central compiler so future query sources compose.
 import { parseMapDefinitions } from "./definition.js";
 import { compileMapLayers } from "./layers.js";
+import { compileMarkerClick } from "./marker-click.js";
 import { BASEMAP_ATTRIBUTE, compileMapOptions } from "./options.js";
 
 export const SOURCE_TREE_PATTERN = `[
@@ -160,6 +161,7 @@ export function createDirectSourceCompiler(api) {
         watchUids: [],
         options: null,
         layers: [],
+        markerClick: null,
       };
     }
 
@@ -186,15 +188,21 @@ export function createDirectSourceCompiler(api) {
     const sourceBlocks = descendants(root);
     const layerResult = compileMapLayers(sourceBlocks);
     const optionsResult = compileMapOptions({ root, basemapAttributeUid: attributeUid });
+    const markerClickResult = compileMarkerClick(root);
     diagnostics.push(...layerResult.diagnostics);
     diagnostics.push(...optionsResult.diagnostics);
+    diagnostics.push(...markerClickResult.diagnostics);
+    const configurationBlockUids = new Set([
+      ...layerResult.recognizedBlockUids,
+      ...optionsResult.recognizedBlockUids,
+      ...markerClickResult.recognizedBlockUids,
+    ]);
     const contributions = [];
-    const watchUids = new Set();
+    const watchUids = new Set(markerClickResult.watchUids);
     const referencedBlockUids = new Set();
     for (const block of sourceBlocks) {
       const uid = block?.[":block/uid"];
-      if (!uid || layerResult.recognizedBlockUids.has(uid)) continue;
-      if (optionsResult.recognizedBlockUids.has(uid)) continue;
+      if (!uid || configurationBlockUids.has(uid)) continue;
       if (orderedChildren(block).length > 0) continue;
       for (const { blockUid } of splitRefs(block).blockRefs) referencedBlockUids.add(blockUid);
     }
@@ -215,8 +223,7 @@ export function createDirectSourceCompiler(api) {
     for (const block of sourceBlocks) {
       const sourceBlockUid = block?.[":block/uid"];
       if (!sourceBlockUid) continue;
-      if (layerResult.recognizedBlockUids.has(sourceBlockUid)) continue;
-      if (optionsResult.recognizedBlockUids.has(sourceBlockUid)) continue;
+      if (configurationBlockUids.has(sourceBlockUid)) continue;
       const children = orderedChildren(block);
       const refs = splitRefs(block);
       let pageRefs = removeNestedNamespaceRefs(block, refs.pageRefs).map((page) => ({
@@ -287,6 +294,7 @@ export function createDirectSourceCompiler(api) {
       watchUids: [...watchUids],
       options: optionsResult.options,
       layers: layerResult.layers,
+      markerClick: markerClickResult.markerClick,
     };
   }
 
