@@ -1,7 +1,9 @@
 # Composable architecture for Roam Map
 
-Status: technical audit plus first product-loop and basemap-catalog
-implementation, current 2026-08-07.
+Status: long-form technical audit, decision record, and experiment log for the
+first product loop and basemap catalog. Implementation claims were reconciled
+with the 2026-08-08 simplification; earlier observations and rejected designs
+remain intentionally preserved as history.
 
 This note develops the source and rendering model in [DESIGN.md](./DESIGN.md).
 It asks how Roam Map can stay simple for an ordinary `{{map}}` outline while
@@ -43,13 +45,29 @@ identified separately.
 8. Treat native queries, search, and `:q` as different source kinds. They have
    different APIs, result shapes, limits, contextual behavior, and invalidation
    rules.
-9. Guard every asynchronous compilation with an `AbortSignal` and a generation
-   number. Each visible rendering of a map block owns a separate view instance
-   and cleanup scope.
+9. Guard asynchronous compilation with cancellation where the underlying work
+   supports it and always with a generation number. Each visible rendering of a
+   map block owns a separate view instance and an explicit ownership tree for
+   cleanup.
 10. Resolve readable per-map basemap names through a graph-wide catalog. Keep
     provider configuration and public browser keys in extension settings, and
     keep provider/authentication logic out of source adapters and MapLibre
     layers.
+
+### Current module boundaries
+
+The 2026-08-08 reorganization made those boundaries visible in the repository:
+
+| Area | Modules | Owns |
+|---|---|---|
+| Roam boundary | `src/roam/` | Alpha API calls and attribute normalization |
+| Pure map pipeline | `src/map/` | Definitions, contributions, canonical page identity, place records, options, layers, compilation, and live invalidation |
+| MapLibre boundary | `src/maplibre/` | MapLibre instances, styles, sources, images, layers, and renderer events |
+| Graph settings | `src/settings/` | Basemap providers, registry subscription, and settings UI |
+| Visible instances | `src/ui/` | React rendering, local error isolation, and the one provisional DOM mount seam |
+
+The tests mirror these folders. `src/extension.js` is composition and extension
+lifecycle only; it does not own a second state container.
 
 ## What ProseMirror contributes
 
@@ -111,9 +129,12 @@ The useful lesson is ownership. State and cleanup belong to the feature and
 view instance that created them.
 
 Roam Map does not need a general `PluginKey` implementation. Plain namespaced
-fields and explicit object ownership are sufficient. It does need one cleanup
-scope that can dispose of React roots, MapLibre maps, observers, pull watches,
-requests, resize handlers, and event listeners in reverse registration order.
+fields and explicit object ownership are sufficient. It also does not need a
+generic cleanup registry. The extension owns the mount lifecycle and basemap
+registry; each mount owns its React root; the React subtree owns its live
+session, `ResizeObserver`, and MapLibre runtime; and those objects directly
+dispose the watches, requests, handlers, images, and map resources they create.
+Each stop/remove operation is idempotent.
 
 ### Commands as capability checks
 
@@ -899,6 +920,11 @@ type InstanceEvent =
 
 A reducer is optional. The important constraint is that state changes flow
 through one instance controller and stale generations cannot mutate the view.
+The current implementation keeps that controller in `src/map/live-session.js`:
+watch reconciliation is serialized, callback identity is retained for exact
+removal, and a result is published only after its generation's watch set is
+current. React consumes those events; it does not duplicate the session's
+mutable watch state.
 
 ### Focused watches, not graph-wide reactivity
 
@@ -993,14 +1019,18 @@ sources rather than precede the product loop.
 
 The resulting vertical slice now includes the lifecycle and build harness,
 current and compatibility place resolution, ordered descendant page sources,
-a persistent point renderer, focused pull watches with stale-generation
-guards, and visible counts, diagnostics, refresh, fit, selection, and page
-navigation. Query, search, and `:q` inputs remain deliberately unimplemented;
-the parser reports an inline argument instead of pretending to execute it.
+central contribution deduplication by page UID, batched graph pulls, validated
+GeoJSON geometry, title-keyed attribute projection, validated native MapLibre
+layers and image assets, named basemaps, a persistent point renderer, focused
+pull watches with stale-generation guards, and visible counts, diagnostics,
+refresh, fit, coincident-feature selection, and page navigation. Query, search,
+and `:q` inputs remain deliberately unimplemented; the parser reports an inline
+argument instead of pretending to execute it.
 
-Raw GeoJSON, validated native MapLibre resources, and a public contribution API
-deserve separate later issues. They should not be folded into the first point
-renderer.
+Raw GeoJSON sources and a public contribution API deserve separate later
+issues. Validated native layer resources are implemented over the compiled
+`roam-map-features` source; arbitrary authored sources and complete styles are
+still deliberately outside that checkpoint.
 
 ## Verification checkpoint
 
@@ -1019,6 +1049,15 @@ latest-generation commits, pull-watch diffing and removal, persistent map data
 updates, initial-only fitting, and complete runtime cleanup. The production
 bundle guard requires one MapLibre license marker, rejects React runtime
 signatures, and caps the artifact size.
+
+The 2026-08-08 refactor extended those contracts to strict GeoJSON geometry
+validation, batched pulls, adapter-independent contribution merging, watch
+registration races, incremental mount discovery, isolated React render
+failures, external-store basemap subscriptions, derived selection/preview
+state, and selection among coincident rendered features. It passed 56 tests,
+the production build, and the bundle guard. No authenticated Roam graph was
+available for a new live seam test, so the live observations below remain the
+latest evidence rather than being silently upgraded.
 
 ## Live experiments still required
 

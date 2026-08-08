@@ -3,6 +3,11 @@
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for the detailed ProseMirror and Roam
 API audit behind these notes.
 
+> Document role: this is the compact design contract. Proposed forms and future
+> work are intentionally retained beside implemented behavior. Implementation
+> status was reconciled with the 2026-08-08 refactor; the longer research and
+> experiment record remains in `ARCHITECTURE.md` and `PRESENTATION.md`.
+
 ## Core model
 
 Every rendered map is a union of typed inputs:
@@ -22,6 +27,21 @@ sources retain their own explicit identities.
   subscribe: optionalInvalidateCallback => cleanup
 }
 ```
+
+### Current implementation folders
+
+The source tree follows the same boundaries without introducing a framework:
+
+| Folder | Responsibility |
+|---|---|
+| `src/roam/` | Documented Alpha API calls and normalization of current and compatibility attribute representations |
+| `src/map/` | Definition parsing, source contributions, option/layer compilation, place records, and one live session per visible map |
+| `src/maplibre/` | The only owner of MapLibre objects, style replacement, renderer assets, and map event handlers |
+| `src/settings/` | Basemap catalog, provider-backed settings, and the settings panel |
+| `src/ui/` | React view, error boundary, and the isolated inline-mount DOM seam |
+
+Tests mirror those folders under `test/`, so a module and its contract are easy
+to find together.
 
 Resolvers are selected by input kind. The page resolver deduplicates
 page-backed places by page UID while preserving source provenance and group
@@ -161,6 +181,14 @@ sources may remain native resources rather than being forced into GeoJSON.
 - Give query, search, and Datalog sources an explicit refresh action.
 - Do not rerun every expensive query after every unrelated graph edit.
 
+The current ownership split keeps mutable state close to the system that owns
+it. `src/map/live-session.js` owns compilation generations and exact pull-watch
+registrations. `src/maplibre/runtime.js` owns MapLibre's mutable state. The React
+view owns only user-visible UI state; it derives selected-feature and basemap
+preview values during render and subscribes to the basemap registry with
+`useSyncExternalStore`. There is no generic application-state or cleanup
+registry.
+
 The first milestone should prove the direct-reference loop before adding every
 source adapter.
 
@@ -177,7 +205,9 @@ to mount discovery, verifies the authoritative block string before mounting,
 and restores the fallback button during cleanup. The class and DOM layout
 remain provisional rather than a settled registration contract.
 
-If a contained DOM observer is required, it is only a mounting signal. Block
+The contained DOM observer is only a mounting signal. It scans newly added
+subtrees, then sweeps disconnected mounts; it does not rescan the whole document
+for every mutation. Block
 UIDs, source definitions, query results, and place data must be read through the
 Roam Alpha API. Each visible render is its own instance because one block can
 appear in the main window, sidebar, embeds, and block references simultaneously.

@@ -6,6 +6,10 @@ query-source extension, and the verification work that keeps both paths
 consistent. Read it before changing attribute projection, MapLibre
 expressions, image markers, presets, or map-wide presentation options.
 
+> Document role: this is the detailed presentation decision and experiment
+> record. Historical prototype syntax is retained and labeled rather than
+> erased. Current implementation claims were reconciled on 2026-08-08.
+
 The central rule is:
 
 > Roam Map translates Roam data into ordinary feature properties and MapLibre
@@ -20,9 +24,9 @@ When MapLibre already has a concept such as `get`, `case`, `coalesce`,
 The current checkpoint compiles direct page sources into one stable GeoJSON
 source, projects readable Roam attributes, registers image assets, and accepts
 validated native MapLibre layers over that source. The earlier
-`markerColor`/`markerRadius` circle path remains as compatibility behavior, not
-the composability boundary. Native query sources, global state, and a portrait
-preset remain future work.
+`map/marker`, `map/color`, and `map/radius` circle path has been removed; its
+findings remain documented below as history, not compatibility behavior. Native
+query sources, global state, and a portrait preset remain future work.
 
 | Area | Current direction | Status |
 |---|---|---|
@@ -41,6 +45,7 @@ preset remain future work.
 | Images | Runtime asset manager plus MapLibre style images | Implemented for exact HTTP(S) image Markdown |
 | Registered asset size | 64×64 physical pixels at `pixelRatio: 2` | Implemented |
 | Image crop variants | Square token plus an alpha-clipped `#circle` variant | Implemented |
+| Historical marker/color/radius spike | Use native layers instead | Removed after validating the underlying attribute and watch behavior |
 | Easy portrait markers | First-party preset compiled to native layers | Not implemented |
 | External JavaScript hook | Keep the seam possible; do not publish it yet | Deferred |
 
@@ -218,10 +223,11 @@ identity. The page resolver then reads location and other attributes, including
 
 `MapLibre layer` is a readable parent block with exactly one ordinary
 code-block child containing strict JSON. Roam may render that child with its
-generic `javascript` label; its contents remain JSON. This is the durable form
-because Roam can normalize an unknown custom code-fence language. The compiler
-still accepts a compact `maplibre-layer` fence when its literal block string is
-preserved, but new examples and insertion commands should use the parent form.
+generic `javascript` label; its contents remain JSON. This is the only accepted
+form because Roam can normalize an unknown custom code-fence language. The
+earlier compact `maplibre-layer` fence was removed: accepting it only when its
+literal block string happened to survive Roam created an unreliable second
+grammar. Its rejection is a compatibility decision, not missing parser work.
 
 The direct sources, `roam-map-features` source ID, title-keyed attribute
 projection, runtime image registration, and validated layers in Map A are all
@@ -1032,6 +1038,8 @@ The current suite proves:
   text remains text.
 - The durable `MapLibre layer` parent form survives Roam's code-block
   normalization and accepts strict JSON even when the UI labels it JavaScript.
+- The removed compact `maplibre-layer` fence is not recognized as either a
+  layer or an accidental page source.
 - Invalid JSON, invalid style specifications, duplicate layer IDs, reserved
   IDs, and foreign sources produce local diagnostics.
 - Layer-definition blocks are configuration, not accidental map sources.
@@ -1055,6 +1063,15 @@ The current suite proves:
   back to OpenFreeMap Liberty; authenticated URLs are redacted from runtime
   errors.
 - Stale image work is aborted or ignored by its generation guard.
+- Source contributions deduplicate centrally by page UID before one batched
+  place-resolution pass, while retaining every contributing block as
+  provenance.
+- Invalid GeoJSON positions, rings, and nested geometry collections are
+  diagnosed before the renderer boundary.
+- Pull-watch reconciliation cannot publish a stale generation or leak a watch
+  whose asynchronous registration finishes after replacement or disposal.
+- Clicking coincident rendered features exposes every distinct page UID for
+  selection instead of silently choosing the top-painted feature.
 
 Use the installed style-spec package in focused tests when testing MapLibre
 semantics. In particular, verify the difference between an unavailable image
@@ -1108,6 +1125,12 @@ as separate OpenFreeMap entries; the People fixture still reported nine
 sources, nine mapped, and zero unmapped after reload. UI automation did not
 complete the five visual style switches, so verification step 6 remains open
 and should not be inferred from successful endpoint requests or unit tests.
+
+The 2026-08-08 organization and state simplification passed 56 tests, the
+production build, and the bundle guard. It did not receive a new authenticated
+live-Roam pass because no signed-in graph was available. In particular, do not
+infer the mount, watch, or coincident-selection behavior from unit tests alone;
+rerun the live fixture after loading this build in Roam.
 
 When #9 is implemented, add a second map fed by a child native query. Compare
 its feature UIDs, properties, and presentation with the direct map; exercise

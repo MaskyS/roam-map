@@ -1,6 +1,6 @@
 # Roam Map
 
-Roam Map turns ordinary Roam outlines into live maps. The current checkpoint
+Roam Map turns ordinary Roam outlines into live maps. The current implementation
 implements the first edit-render-inspect loop: a `{{map}}` block reads page
 references below it, resolves Roam Places location attributes, projects
 readable Roam attributes into GeoJSON properties, and keeps one inline
@@ -41,7 +41,12 @@ later graph edits do not discard the user's viewport.
 
 ## Presentation paths
 
-The first configurable slice uses real Roam attributes:
+`map/basemap` is the supported readable presentation option. Native MapLibre
+layers are the supported way to style the compiled features.
+
+### Historical compatibility spike (removed)
+
+The 2026-08-07 presentation spike also accepted these real Roam attributes:
 
 ```text
 {{map}}
@@ -53,13 +58,14 @@ The first configurable slice uses real Roam attributes:
   [[Curepipe]]
 ```
 
-`map/basemap` selects a readable name from the graph's basemap catalog. The
-other three options above remain compatibility spike syntax rather than a
-settled public API: `map/color` and `map/radius` secretly configure one circle
-layer, while `map/marker` acts as both a page source and a per-occurrence
-styling scope. Those forms proved that real Roam attributes can drive live
-presentation, including relationship-scoped overrides, but they should not
-duplicate or obscure MapLibre's style, source, layer, and expression model.
+`map/basemap` still selects a readable name from the graph's basemap catalog.
+The other three forms are no longer accepted: `map/color` and `map/radius`
+secretly configured one circle layer, while `map/marker` acted as both a page
+source and a per-occurrence styling scope. The spike proved that real Roam
+attributes can drive live presentation, including relationship-scoped
+overrides, but keeping it would duplicate and obscure MapLibre's style, source,
+layer, and expression model. The example remains here as design history, not
+as syntax to copy.
 
 The composable path now accepts validated native MapLibre layers over the
 stable GeoJSON source compiled for the map. Arbitrary style URLs and
@@ -76,9 +82,9 @@ expressions, image resources, and map-wide global state. That guide also marks
 which parts remain hypotheses requiring live verification.
 
 The reader supports Roam's current HARC representation and its legacy
-compatibility representation. Invalid values appear as local diagnostics and
-fall back to the inherited defaults. Changes use the same pull-watch path as
-source edits, so the map should update without a Roam reload.
+compatibility representation. Invalid values appear as local diagnostics.
+Changes to `map/basemap`, canonical layer blocks, and projected page attributes
+use focused pull watches, so the map should update without a Roam reload.
 
 ### Basemap catalog and provider settings
 
@@ -145,6 +151,9 @@ with a suitable basemap, not as a provider variant.
 The durable form is a readable `MapLibre layer` block with exactly one ordinary
 code-block child containing strict JSON. Roam may display that child with its
 generic `javascript` language label; the content is still parsed as JSON.
+This parent-plus-child form is the only accepted layer grammar. The earlier
+compact `maplibre-layer` fence was removed because Roam can normalize unknown
+code-fence language labels and make that spelling unreliable.
 `roam-map-features` is the stable ID of the GeoJSON source compiled from the
 surrounding Roam inputs. Each layer is validated with the pinned MapLibre style
 specification before it reaches the map. Layer IDs must be distinct, and IDs
@@ -297,6 +306,7 @@ generated and ignored by Git.
 npm install
 npm run dev       # rebuild on source changes
 npm run check     # tests, production build, and bundle guard
+./build.sh        # clean dependency install and production build
 ```
 
 Load this repository through **Settings → Roam Depot → Load local folder**.
@@ -313,7 +323,8 @@ access and the renderer keeps provider and OpenStreetMap attribution visible.
 The other keyless OpenFreeMap styles, the EOX context view, and graph-configured
 MapTiler choices are described above.
 
-The `{{map}}` mounting adapter is intentionally isolated in one module because
+The `{{map}}` mounting adapter is intentionally isolated in
+`src/ui/mount-maps.js` because
 Roam does not currently document registration of arbitrary inline parser
 tokens. It observes Roam's fallback map button only to discover a visible
 mount; all semantic reads, page navigation, and invalidation use the documented
