@@ -10,8 +10,7 @@ import { FEATURE_PROPERTIES } from "../../src/map/feature-properties.js";
 import { PLACE_FIELDS, resolvePlaceEntity } from "../../src/map/place-records.js";
 
 const FIELD_UIDS = new Map([
-  [PLACE_FIELDS.latitude, "attr-lat"],
-  [PLACE_FIELDS.longitude, "attr-lon"],
+  [PLACE_FIELDS.coordinates, "attr-coordinates"],
   [PLACE_FIELDS.geometry, "attr-geometry"],
   [PLACE_FIELDS.address, "attr-address"],
   [PLACE_FIELDS.geocoderId, "attr-geocoder"],
@@ -30,8 +29,9 @@ test("title-keyed attributes, image assets, and compiler properties share one fe
     ":block/uid": "person",
     ":node/title": "[[People]]/Ada Lovelace",
     ":harc/_e": [
-      relation("attr-lat", PLACE_FIELDS.latitude, [{ ":harc/v-string": "51.5072" }]),
-      relation("attr-lon", PLACE_FIELDS.longitude, [{ ":harc/v-string": "-0.1276" }]),
+      relation("attr-coordinates", PLACE_FIELDS.coordinates, [
+        { ":harc/v-string": "geo:51.5072,-0.1276" },
+      ]),
       relation("attr-picture", "Profile Picture", [{ ":harc/v-string": `![](${sourceUrl})` }]),
       relation("attr-tags", "Tags", [
         { ":node/title": "Mathematician" },
@@ -45,16 +45,17 @@ test("title-keyed attributes, image assets, and compiler properties share one fe
   assert.equal(record.feature.properties["Profile Picture"], imageAssetId(sourceUrl));
   assert.deepEqual(record.feature.properties.Tags, ["Mathematician", "Programmer"]);
   assert.equal(record.feature.properties.Active, true);
-  assert.equal(record.feature.properties[FEATURE_PROPERTIES.pageUid], "person");
+  assert.equal(record.feature.properties[FEATURE_PROPERTIES.entityUid], "person");
   assert.equal(record.feature.properties[FEATURE_PROPERTIES.title], "[[People]]/Ada Lovelace");
-  assert.equal("pageUid" in record.feature.properties, false);
+  assert.equal("entityUid" in record.feature.properties, false);
   assert.deepEqual(record.assets, [
     {
       id: imageAssetId(sourceUrl),
       sourceUrl,
       attributeTitle: "Profile Picture",
       attributeUid: "attr-picture",
-      pageUid: "person",
+      entityUid: "person",
+      identityKind: "page",
       width: 64,
       height: 64,
       pixelRatio: 2,

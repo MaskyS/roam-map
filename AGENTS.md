@@ -15,6 +15,27 @@ Roam Map is a deliberately narrow Roam Depot extension for persistent maps.
 - Keep point, geometry, provenance, and layer data independent of MapLibre
   objects.
 
+## Customization documentation contract
+
+Before changing or documenting an authoring surface, read
+[`customization.md`](./customization.md) and [`examples.md`](./examples.md).
+Keep them aligned with the implementation:
+
+- `README.md` is rendered inside Roam's extension settings. Keep it concise,
+  use shallow standard Markdown, and link to the detailed references instead of
+  embedding long recipes there.
+- `customization.md` is the canonical, human- and agent-readable reference for
+  supported map concepts, exact Roam forms, extension boundaries, and explicit
+  limitations.
+- `examples.md` contains copyable forms that have been tested in the current
+  implementation. Do not present planned syntax as a working example.
+- Say whether a value is a Roam source, durable map option, MapLibre style,
+  source, layer, expression, runtime image, or transient view action. Do not
+  blur those concepts into a generic “map setting.”
+- For URLs and credentials, state where the value is stored, who can read it,
+  which requests receive it, required attribution, and whether arbitrary URLs
+  are actually supported.
+
 ## Required Roam documentation gate
 
 Agents must not design, review, debug, or implement a nontrivial Roam Map

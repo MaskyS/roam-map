@@ -1,9 +1,21 @@
-// Reads only direct outline sources and returns contributions with provenance.
-// Deduplication is intentionally left to the central compiler so future query sources compose.
+// Reads map outline sources and returns contributions with provenance.
+// Deduplication is intentionally left to the central compiler so source kinds compose.
 import { parseMapDefinitions } from "./definition.js";
+import { isGeoUri } from "../geo-uri.js";
+import { currentAttributeValues } from "../roam/attribute-values.js";
+import {
+  compileDynamicSources,
+  parseDynamicSourceDefinition,
+} from "./dynamic-sources.js";
 import { compileMapLayers } from "./layers.js";
 import { compileMarkerClick } from "./marker-click.js";
-import { BASEMAP_ATTRIBUTE, compileMapOptions } from "./options.js";
+import { compileResultsList } from "./results-list.js";
+import {
+  BASEMAP_ATTRIBUTE,
+  MAP_SIZE_ATTRIBUTE,
+  compileMapOptions,
+} from "./options.js";
+import { PLACE_FIELDS } from "./place-records.js";
 
 export const SOURCE_TREE_PATTERN = `[
   :block/uid :block/string :block/order :entity/attrs
@@ -16,8 +28,15 @@ export const SOURCE_TREE_PATTERN = `[
     {:harc/v-source [:block/uid]}
   ]}
   {:block/children [
-    :block/uid :block/string :block/order
+    :block/uid :block/string :block/order :entity/attrs
     {:block/refs [:block/uid :node/title :block/string]}
+    {:harc/_e [
+      :block/uid
+      {:harc/a [:block/uid :node/title]}
+      {:harc/v [:block/uid :node/title :block/string :harc/v-string :harc.text/string]}
+      {:harc/a-source [:block/uid]}
+      {:harc/v-source [:block/uid]}
+    ]}
     {:block/children ...}
   ]}
 ]`;
@@ -26,6 +45,17 @@ const REFERENCED_BLOCK_PATTERN = `[
   :block/uid :block/string
   {:block/refs [:block/uid :node/title :block/string]}
 ]`;
+
+// Matches blocks written as map/basemap:: or map/size:: attribute syntax.
+// Attribute-relation recognition can lag while the attribute pages or their
+// index entries are still settling, so the block text itself is authoritative
+// for keeping option blocks out of the source set.
+const OPTION_ATTRIBUTE_BLOCK = /^(?:\[\[)?map\/(?:basemap|size)(?:\]\])?::/u;
+const ATTRIBUTE_BLOCK = /^(?:\[\[[^\]]+\]\]|[^:\n]+)::/u;
+const COORDINATES_ATTRIBUTE_BLOCK = new RegExp(
+  `^(?:\\[\\[)?${PLACE_FIELDS.coordinates}(?:\\]\\])?::`,
+  "u",
+);
 
 function list(value) {
   if (value == null) return [];
@@ -52,6 +82,56 @@ function descendants(root) {
   }
   visit(root);
   return output;
+}
+
+function claimBlockTree(uids, block) {
+  const uid = block?.[":block/uid"];
+  if (uid) uids.add(uid);
+  for (const child of descendants(block)) {
+    if (child?.[":block/uid"]) uids.add(child[":block/uid"]);
+  }
+}
+
+function locationAttributeChildren(block) {
+  const direct = orderedChildren(block);
+  const metadata = direct.filter((child) => child?.[":block/string"] === "roam/meta::");
+  return [
+    ...direct.filter((child) =>
+      COORDINATES_ATTRIBUTE_BLOCK.test(String(child?.[":block/string"] ?? "").trim()),
+    ),
+    ...metadata.flatMap((child) =>
+      orderedChildren(child).filter((grandchild) =>
+        COORDINATES_ATTRIBUTE_BLOCK.test(
+          String(grandchild?.[":block/string"] ?? "").trim(),
+        ),
+      ),
+    ),
+  ];
+}
+
+function hasCurrentLocationAttribute(block) {
+  const direct = orderedChildren(block);
+  const metadata = direct.filter((child) => child?.[":block/string"] === "roam/meta::");
+  return [block, ...metadata].some(
+    (entity) => currentAttributeValues(entity, PLACE_FIELDS.coordinates).length > 0,
+  );
+}
+
+function authoredAttributeUids(block) {
+  const uids = new Set();
+  for (const child of orderedChildren(block)) {
+    const string = String(child?.[":block/string"] ?? "").trim();
+    if (ATTRIBUTE_BLOCK.test(string)) {
+      if (child?.[":block/uid"]) uids.add(child[":block/uid"]);
+      continue;
+    }
+    if (string !== "roam/meta::") continue;
+    if (child?.[":block/uid"]) uids.add(child[":block/uid"]);
+    for (const descendant of descendants(child)) {
+      if (descendant?.[":block/uid"]) uids.add(descendant[":block/uid"]);
+    }
+  }
+  return uids;
 }
 
 function splitRefs(block) {
@@ -134,22 +214,41 @@ function sourceDiagnostic(code, sourceBlockUid, message, detail = null) {
 }
 
 export function createDirectSourceCompiler(api) {
-  let basemapAttributeUidPromise = null;
+  let optionAttributeUidsPromise = null;
 
-  function basemapAttributeUid() {
-    if (!basemapAttributeUidPromise) {
-      if (typeof api.pullByTitle !== "function") return Promise.resolve(null);
-      basemapAttributeUidPromise = api
-        .pullByTitle("[:block/uid]", BASEMAP_ATTRIBUTE)
-        .then((entity) => entity?.[":block/uid"] ?? null);
+  function optionAttributeUids() {
+    if (!optionAttributeUidsPromise) {
+      if (typeof api.pullByTitle !== "function") {
+        return Promise.resolve({ basemap: null, size: null });
+      }
+      optionAttributeUidsPromise = Promise.all(
+        [BASEMAP_ATTRIBUTE, MAP_SIZE_ATTRIBUTE].map(async (title) => {
+          const entity = await api.pullByTitle("[:block/uid]", title);
+          return [title, entity?.[":block/uid"] ?? null];
+        }),
+      ).then((entries) => Object.fromEntries(entries));
     }
-    return basemapAttributeUidPromise;
+    return optionAttributeUidsPromise.then((uids) => {
+      // Option attribute pages are created the first time an option is written,
+      // so an unresolved page must be retried on the next compile rather than
+      // cached; otherwise late-written option blocks leak into sources.
+      if (
+        uids[BASEMAP_ATTRIBUTE] == null ||
+        uids[MAP_SIZE_ATTRIBUTE] == null
+      ) {
+        optionAttributeUidsPromise = null;
+      }
+      return {
+        basemap: uids[BASEMAP_ATTRIBUTE],
+        size: uids[MAP_SIZE_ATTRIBUTE],
+      };
+    });
   }
 
   async function compile(mapUid) {
-    const [root, attributeUid] = await Promise.all([
+    const [root, attributeUids] = await Promise.all([
       api.pull(SOURCE_TREE_PATTERN, mapUid),
-      basemapAttributeUid(),
+      optionAttributeUids(),
     ]);
     if (!root) {
       return {
@@ -162,6 +261,7 @@ export function createDirectSourceCompiler(api) {
         options: null,
         layers: [],
         markerClick: null,
+        resultsList: null,
       };
     }
 
@@ -180,25 +280,62 @@ export function createDirectSourceCompiler(api) {
         sourceDiagnostic(
           "source.inline-not-supported-yet",
           mapUid,
-          `The inline source “${definition.argument}” is recognized but is not part of the direct-reference milestone.`,
+          `The inline source “${definition.argument}” is recognized but is not supported. Add source blocks beneath the map instead.`,
         ),
       );
     }
 
     const sourceBlocks = descendants(root);
+    const directChildren = orderedChildren(root);
     const layerResult = compileMapLayers(sourceBlocks);
-    const optionsResult = compileMapOptions({ root, basemapAttributeUid: attributeUid });
+    const optionsResult = compileMapOptions({
+      root,
+      basemapAttributeUid: attributeUids.basemap,
+      sizeAttributeUid: attributeUids.size,
+    });
     const markerClickResult = compileMarkerClick(root);
+    const resultsListResult = compileResultsList(root);
     diagnostics.push(...layerResult.diagnostics);
     diagnostics.push(...optionsResult.diagnostics);
     diagnostics.push(...markerClickResult.diagnostics);
+    diagnostics.push(...resultsListResult.diagnostics);
     const configurationBlockUids = new Set([
       ...layerResult.recognizedBlockUids,
       ...optionsResult.recognizedBlockUids,
       ...markerClickResult.recognizedBlockUids,
+      ...resultsListResult.recognizedBlockUids,
     ]);
+    const dynamicDefinitions = [];
+    for (const child of directChildren) {
+      const dynamic = parseDynamicSourceDefinition(child);
+      if (!dynamic) continue;
+      dynamicDefinitions.push(dynamic);
+      claimBlockTree(configurationBlockUids, child);
+    }
+    const blockLocationSources = new Map();
+    for (const block of sourceBlocks) {
+      const entityUid = block?.[":block/uid"];
+      const string = String(block?.[":block/string"] ?? "").trim();
+      if (!entityUid || configurationBlockUids.has(entityUid)) continue;
+      const inline = isGeoUri(string);
+      const attributed =
+        locationAttributeChildren(block).length > 0 || hasCurrentLocationAttribute(block);
+      if (!inline && !attributed) continue;
+      blockLocationSources.set(entityUid, { inline, title: string });
+      for (const uid of authoredAttributeUids(block)) configurationBlockUids.add(uid);
+    }
+    for (const block of sourceBlocks) {
+      const uid = block?.[":block/uid"];
+      if (!uid) continue;
+      if (OPTION_ATTRIBUTE_BLOCK.test(String(block?.[":block/string"] ?? "").trim())) {
+        configurationBlockUids.add(uid);
+      }
+    }
     const contributions = [];
-    const watchUids = new Set(markerClickResult.watchUids);
+    const watchUids = new Set([
+      ...markerClickResult.watchUids,
+      ...resultsListResult.watchUids,
+    ]);
     const referencedBlockUids = new Set();
     for (const block of sourceBlocks) {
       const uid = block?.[":block/uid"];
@@ -220,14 +357,64 @@ export function createDirectSourceCompiler(api) {
         .map((block) => [block[":block/uid"], block]),
     );
 
+    for (const child of directChildren) {
+      const sourceBlockUid = child?.[":block/uid"];
+      if (!sourceBlockUid || configurationBlockUids.has(sourceBlockUid)) continue;
+      if (orderedChildren(child).length > 0) continue;
+      const refs = splitRefs(child);
+      if (refs.pageRefs.length > 0 || refs.blockRefs.length !== 1) continue;
+      const [{ blockUid }] = refs.blockRefs;
+      const referenced = referencedByUid.get(blockUid);
+      if (!referenced) continue;
+      const dynamic = parseDynamicSourceDefinition(referenced, {
+        sourceBlockUid,
+        viaBlockRefUid: blockUid,
+      });
+      if (!dynamic) continue;
+      dynamicDefinitions.push(dynamic);
+      claimBlockTree(configurationBlockUids, child);
+    }
+
+    const dynamicResults = await compileDynamicSources(api, dynamicDefinitions);
+    const dynamicBySourceUid = new Map(
+      dynamicResults.map((result) => [result.definition.sourceBlockUid, result]),
+    );
+    for (const result of dynamicResults) {
+      diagnostics.push(...result.diagnostics);
+      for (const uid of result.watchUids) watchUids.add(uid);
+    }
+
     for (const block of sourceBlocks) {
       const sourceBlockUid = block?.[":block/uid"];
       if (!sourceBlockUid) continue;
+      const dynamic = dynamicBySourceUid.get(sourceBlockUid);
+      if (dynamic) {
+        contributions.push(...dynamic.contributions);
+        continue;
+      }
       if (configurationBlockUids.has(sourceBlockUid)) continue;
+      const blockLocation = blockLocationSources.get(sourceBlockUid);
+      if (blockLocation) {
+        contributions.push({
+          identityKind: "block",
+          entityUid: sourceBlockUid,
+          title: blockLocation.title,
+          allowInlineCoordinates: blockLocation.inline,
+          provenance: {
+            sourceBlockUid,
+            originBlockUid: sourceBlockUid,
+            viaBlockRefUid: null,
+          },
+        });
+        continue;
+      }
       const children = orderedChildren(block);
       const refs = splitRefs(block);
       let pageRefs = removeNestedNamespaceRefs(block, refs.pageRefs).map((page) => ({
-        ...page,
+        identityKind: "page",
+        entityUid: page.pageUid,
+        title: page.title,
+        allowInlineCoordinates: false,
         provenance: { sourceBlockUid, originBlockUid: sourceBlockUid, viaBlockRefUid: null },
       }));
 
@@ -247,7 +434,10 @@ export function createDirectSourceCompiler(api) {
             continue;
           }
           const referencedRefs = splitRefs(referenced).pageRefs.map((page) => ({
-            ...page,
+            identityKind: "page",
+            entityUid: page.pageUid,
+            title: page.title,
+            allowInlineCoordinates: false,
             provenance: {
               sourceBlockUid,
               originBlockUid: blockUid,
@@ -258,7 +448,7 @@ export function createDirectSourceCompiler(api) {
         }
       }
 
-      pageRefs = uniqueBy(pageRefs, "pageUid");
+      pageRefs = uniqueBy(pageRefs, "entityUid");
       if (pageRefs.length === 1) {
         contributions.push(pageRefs[0]);
         continue;
@@ -293,8 +483,11 @@ export function createDirectSourceCompiler(api) {
       diagnostics,
       watchUids: [...watchUids],
       options: optionsResult.options,
+      optionSourceUids: optionsResult.optionSourceUids,
       layers: layerResult.layers,
       markerClick: markerClickResult.markerClick,
+      resultsList: resultsListResult.resultsList,
+      dynamicSources: dynamicResults.map(({ report }) => report),
     };
   }
 
@@ -303,6 +496,9 @@ export function createDirectSourceCompiler(api) {
 
 export const __test = {
   descendants,
+  authoredAttributeUids,
+  hasCurrentLocationAttribute,
+  locationAttributeChildren,
   orderedChildren,
   removeNestedNamespaceRefs,
   splitRefs,

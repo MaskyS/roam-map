@@ -4,12 +4,12 @@ import assert from "node:assert/strict";
 import {
   createPlaceResolver,
   PLACE_FIELDS,
+  resolveLocatedEntity,
   resolvePlaceEntity,
 } from "../../src/map/place-records.js";
 
 const ATTRIBUTE_UIDS = new Map([
-  [PLACE_FIELDS.latitude, "attr-lat"],
-  [PLACE_FIELDS.longitude, "attr-lon"],
+  [PLACE_FIELDS.coordinates, "attr-coordinates"],
   [PLACE_FIELDS.geometry, "attr-geometry"],
   [PLACE_FIELDS.address, "attr-address"],
   [PLACE_FIELDS.geocoderId, "attr-geocoder"],
@@ -44,12 +44,21 @@ function page(uid, title, options = {}) {
   };
 }
 
+function block(uid, string, options = {}) {
+  return {
+    ":block/uid": uid,
+    ":block/string": string,
+    ":entity/attrs": options.legacy ?? [],
+    ":harc/_e": options.modern ?? [],
+    ":block/children": options.children ?? [],
+  };
+}
+
 test("current HARC coordinates produce a page-identified point, including zero", () => {
   const record = resolvePlaceEntity(
     page("zero", "[[Places]]/Null Island", {
       modern: [
-        harc(PLACE_FIELDS.latitude, "0"),
-        harc(PLACE_FIELDS.longitude, "0", ":harc.text/string"),
+        harc(PLACE_FIELDS.coordinates, "geo:0,0;u=4", ":harc.text/string"),
         harc(PLACE_FIELDS.address, "Gulf of Guinea"),
       ],
     }),
@@ -57,6 +66,7 @@ test("current HARC coordinates produce a page-identified point, including zero",
   );
   assert.deepEqual(record.feature.geometry, { type: "Point", coordinates: [0, 0] });
   assert.equal(record.feature.id, "page:zero");
+  assert.equal(record.feature.properties["roam/uncertaintyMeters"], 4);
   assert.equal(record.label, "Null Island");
   assert.equal(record.diagnostics.length, 0);
 });
@@ -66,8 +76,7 @@ test("legacy attributes under roam/meta resolve through the parent page", () => 
     ":block/uid": "meta-port",
     ":block/string": "roam/meta::",
     ":entity/attrs": [
-      legacy("meta-port", PLACE_FIELDS.latitude, "-20.1609", true),
-      legacy("meta-port", PLACE_FIELDS.longitude, "57.5012", true),
+      legacy("meta-port", PLACE_FIELDS.coordinates, "geo:-20.1609,57.5012", true),
       legacy("meta-port", PLACE_FIELDS.geocoderId, "photon:port", true),
     ],
   };
@@ -84,19 +93,18 @@ test("exact roam/meta structural values are a compatibility fallback", () => {
     ":block/uid": "meta",
     ":block/string": "roam/meta::",
     ":block/children": [
-      { ":block/uid": "lat", ":block/string": "Latitude:: -21" },
-      { ":block/uid": "lon", ":block/string": "Longitude:: 55.5" },
+      { ":block/uid": "coordinates", ":block/string": "Coordinates:: geo:-21,55.5" },
     ],
   };
   const record = resolvePlaceEntity(page("p", "Point", { children: [metadata] }), ATTRIBUTE_UIDS);
   assert.deepEqual(record.feature.geometry.coordinates, [55.5, -21]);
 });
 
-test("current values win while conflicts and invalid coordinate pairs remain visible", () => {
+test("current values win while malformed geo URIs remain visible", () => {
   const record = resolvePlaceEntity(
     page("mixed", "Mixed", {
-      modern: [harc(PLACE_FIELDS.latitude, "10"), harc(PLACE_FIELDS.longitude, "bad")],
-      legacy: [legacy("mixed", PLACE_FIELDS.latitude, "20")],
+      modern: [harc(PLACE_FIELDS.coordinates, "geo:10,bad")],
+      legacy: [legacy("mixed", PLACE_FIELDS.coordinates, "geo:20,30")],
     }),
     ATTRIBUTE_UIDS,
   );
@@ -105,8 +113,7 @@ test("current values win while conflicts and invalid coordinate pairs remain vis
     new Set(record.diagnostics.map(({ code }) => code)),
     new Set([
       "place.conflicting-attribute-models",
-      "place.invalid-coordinate",
-      "place.incomplete-coordinates",
+      "place.invalid-coordinates",
       "place.no-renderable-location",
     ]),
   );
@@ -126,8 +133,7 @@ test("valid GeoJSON remains serializable and coordinates take explicit precedenc
   const conflictingPoint = resolvePlaceEntity(
     page("both", "Both", {
       modern: [
-        harc(PLACE_FIELDS.latitude, "1"),
-        harc(PLACE_FIELDS.longitude, "2"),
+        harc(PLACE_FIELDS.coordinates, "geo:1,2"),
         harc(PLACE_FIELDS.geometry, JSON.stringify({ type: "Point", coordinates: [8, 9] })),
       ],
     }),
@@ -163,10 +169,10 @@ test("malformed GeoJSON coordinates are rejected before reaching MapLibre", () =
 test("multiple place pages are read in one pull_many batch", async () => {
   const pages = [
     page("a", "A", {
-      modern: [harc(PLACE_FIELDS.latitude, "-20"), harc(PLACE_FIELDS.longitude, "57")],
+      modern: [harc(PLACE_FIELDS.coordinates, "geo:-20,57")],
     }),
     page("b", "B", {
-      modern: [harc(PLACE_FIELDS.latitude, "-21"), harc(PLACE_FIELDS.longitude, "58")],
+      modern: [harc(PLACE_FIELDS.coordinates, "geo:-21,58")],
     }),
   ];
   const batches = [];
@@ -181,5 +187,43 @@ test("multiple place pages are read in one pull_many batch", async () => {
   const records = await resolver.resolvePages(["a", "b"]);
 
   assert.deepEqual(batches, [["a", "b"]]);
-  assert.deepEqual(records.map(({ pageUid }) => pageUid), ["a", "b"]);
+  assert.deepEqual(records.map(({ entityUid }) => entityUid), ["a", "b"]);
+});
+
+test("bare and named block points retain block identity", () => {
+  const bare = resolveLocatedEntity(block("bare", "geo:-20.1,57.5;u=8"), ATTRIBUTE_UIDS, {
+    expectedIdentityKind: "block",
+    allowInlineCoordinates: true,
+  });
+  assert.equal(bare.identityKind, "block");
+  assert.equal(bare.feature.id, "block:bare");
+  assert.equal(bare.feature.properties["roam/entityUid"], "bare");
+  assert.equal(bare.label, "-20.1, 57.5");
+
+  const named = resolveLocatedEntity(
+    block("named", "Paris meeting point", {
+      children: [
+        {
+          ":block/uid": "coordinates",
+          ":block/string": "Coordinates:: geo:48.8566,2.3522",
+        },
+      ],
+    }),
+    ATTRIBUTE_UIDS,
+    { expectedIdentityKind: "block" },
+  );
+  assert.equal(named.label, "Paris meeting point");
+  assert.deepEqual(named.feature.geometry.coordinates, [2.3522, 48.8566]);
+});
+
+test("an identity-kind mismatch is diagnosed and never rendered under the wrong identity", () => {
+  const record = resolveLocatedEntity(block("actual-block", "geo:1,2"), ATTRIBUTE_UIDS, {
+    expectedIdentityKind: "page",
+    allowInlineCoordinates: true,
+  });
+
+  assert.equal(record.feature, null);
+  assert.ok(
+    record.diagnostics.some(({ code }) => code === "place.identity-kind-mismatch"),
+  );
 });

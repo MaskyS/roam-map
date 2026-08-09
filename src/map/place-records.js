@@ -1,5 +1,5 @@
-// Roam has both current HARC attributes and legacy triples in existing graphs.
-// This boundary normalizes either representation into plain records before MapLibre sees it.
+// Roam exposes current HARC attributes and compatibility triples. This boundary
+// normalizes either representation into plain records before MapLibre sees it.
 import {
   currentAttributeValues,
   displayAttributeValue,
@@ -7,17 +7,17 @@ import {
   list,
 } from "../roam/attribute-values.js";
 import { legacyAttributeUids, projectAttributes } from "../roam/project-attributes.js";
+import { isGeoUri, parseGeoUri } from "../geo-uri.js";
 import { FEATURE_PROPERTIES } from "./feature-properties.js";
 
 export const PLACE_FIELDS = Object.freeze({
-  latitude: "Latitude",
-  longitude: "Longitude",
+  coordinates: "Coordinates",
   geometry: "Geometry",
   address: "Address",
   geocoderId: "Geocoder ID",
 });
 
-export const PLACE_ENTITY_PATTERN = `[
+export const LOCATION_ENTITY_PATTERN = `[
   :block/uid :node/title :block/string :entity/attrs
   {:harc/_e [
     :block/uid
@@ -61,11 +61,18 @@ function legacyCandidates(entity, attributeTitle, attributeUids) {
 
 function structuralCandidates(entity, attributeTitle) {
   const prefix = `${attributeTitle}::`;
-  return exactMetaChildren(entity).flatMap((metadata) =>
-    list(metadata?.[":block/children"])
+  const bracketedPrefix = `[[${attributeTitle}]]::`;
+  return [entity, ...exactMetaChildren(entity)].flatMap((source) =>
+    list(source?.[":block/children"])
       .map((child) => child?.[":block/string"])
-      .filter((string) => typeof string === "string" && string.startsWith(prefix))
-      .map((string) => string.slice(prefix.length).trim())
+      .filter(
+        (string) =>
+          typeof string === "string" &&
+          (string.startsWith(prefix) || string.startsWith(bracketedPrefix)),
+      )
+      .map((string) =>
+        string.slice(string.startsWith(prefix) ? prefix.length : bracketedPrefix.length).trim(),
+      )
       .filter(Boolean),
   );
 }
@@ -74,20 +81,29 @@ function comparable(value) {
   return typeof value === "string" ? value.trim() : JSON.stringify(value);
 }
 
-function diagnostic({ code, message, pageUid, field = null, severity = "warning", detail = null }) {
+function diagnostic({
+  code,
+  message,
+  entityUid,
+  identityKind = null,
+  field = null,
+  severity = "warning",
+  detail = null,
+}) {
   return {
-    key: [code, pageUid, field, detail].filter(Boolean).join(":"),
+    key: [code, identityKind, entityUid, field, detail].filter(Boolean).join(":"),
     code,
     severity,
     message,
-    pageUid,
+    entityUid,
+    ...(identityKind ? { identityKind } : {}),
     ...(field ? { field } : {}),
     ...(detail ? { detail } : {}),
   };
 }
 
 function chooseField(entity, attributeTitle, attributeUids, diagnostics) {
-  const pageUid = entity?.[":block/uid"] ?? "unknown";
+  const entityUid = entity?.[":block/uid"] ?? "unknown";
   const groups = [
     ["current attribute", harcCandidates(entity, attributeTitle)],
     ["legacy attribute", legacyCandidates(entity, attributeTitle, attributeUids)],
@@ -101,7 +117,7 @@ function chooseField(entity, attributeTitle, attributeUids, diagnostics) {
     diagnostics.push(
       diagnostic({
         code: "place.conflicting-field-values",
-        pageUid,
+        entityUid,
         field: attributeTitle,
         message: `${attributeTitle} has more than one ${chosenModel} value; the first value is being used.`,
         detail: distinctChosen.join(" | "),
@@ -122,7 +138,7 @@ function chooseField(entity, attributeTitle, attributeUids, diagnostics) {
     diagnostics.push(
       diagnostic({
         code: "place.conflicting-attribute-models",
-        pageUid,
+        entityUid,
         field: attributeTitle,
         message: `${attributeTitle} differs between attribute representations; the current representation takes precedence.`,
         detail: shadowed.join(" | "),
@@ -132,22 +148,23 @@ function chooseField(entity, attributeTitle, attributeUids, diagnostics) {
   return chosen;
 }
 
-function coordinate(raw, { min, max, field, pageUid, diagnostics }) {
+function parseCoordinates(raw, { entityUid, identityKind, field, diagnostics }) {
   if (raw == null || (typeof raw === "string" && raw.trim() === "")) return null;
-  const value = typeof raw === "number" ? raw : Number(String(raw).trim());
-  if (!Number.isFinite(value) || value < min || value > max) {
+  try {
+    return parseGeoUri(raw);
+  } catch (error) {
     diagnostics.push(
       diagnostic({
-        code: "place.invalid-coordinate",
-        pageUid,
+        code: "place.invalid-coordinates",
+        entityUid,
+        identityKind,
         field,
-        message: `${field} must be a number from ${min} to ${max}.`,
+        message: `${field} must be a two-dimensional WGS84 geo URI: ${error.message}`,
         detail: String(raw),
       }),
     );
     return null;
   }
-  return value;
 }
 
 function validPosition(value) {
@@ -207,13 +224,14 @@ function validGeometry(value) {
   }
 }
 
-function parseGeometry(raw, pageUid, diagnostics) {
+function parseGeometry(raw, entityUid, identityKind, diagnostics) {
   if (raw == null || raw === "") return { geometry: null, reference: null };
   if (typeof raw === "string" && /^\[\[[\s\S]+\]\]$/.test(raw.trim())) {
     diagnostics.push(
       diagnostic({
         code: "place.geometry-reference",
-        pageUid,
+        entityUid,
+        identityKind,
         field: PLACE_FIELDS.geometry,
         message: "Geometry is a page reference. It is retained for provenance but is not a point until that page is resolved.",
         detail: raw.trim(),
@@ -229,7 +247,8 @@ function parseGeometry(raw, pageUid, diagnostics) {
       diagnostics.push(
         diagnostic({
           code: "place.invalid-geometry",
-          pageUid,
+          entityUid,
+          identityKind,
           field: PLACE_FIELDS.geometry,
           message: "Geometry must be a GeoJSON geometry object, feature, or page reference.",
           detail: raw,
@@ -243,7 +262,8 @@ function parseGeometry(raw, pageUid, diagnostics) {
     diagnostics.push(
       diagnostic({
         code: "place.invalid-geometry",
-        pageUid,
+        entityUid,
+        identityKind,
         field: PLACE_FIELDS.geometry,
         message: "Geometry is not a valid GeoJSON geometry object.",
       }),
@@ -261,29 +281,53 @@ function pageTitleLeaf(title) {
   return wrapped ? wrapped[1].trim() : leaf;
 }
 
-export function resolvePlaceEntity(
+export function resolveLocatedEntity(
   entity,
   attributeUids,
-  { fields = PLACE_FIELDS, attributeTitlesByUid = null } = {},
+  {
+    fields = PLACE_FIELDS,
+    attributeTitlesByUid = null,
+    expectedIdentityKind = null,
+    allowInlineCoordinates = false,
+  } = {},
 ) {
   const diagnostics = [];
-  const pageUid = entity?.[":block/uid"] ?? null;
-  const title = entity?.[":node/title"] ?? null;
-  if (!pageUid || !title) {
+  const entityUid = entity?.[":block/uid"] ?? null;
+  const pageTitle = entity?.[":node/title"] ?? null;
+  const blockString = entity?.[":block/string"] ?? null;
+  const identityKind = pageTitle ? "page" : typeof blockString === "string" ? "block" : expectedIdentityKind;
+  const title = identityKind === "page" ? pageTitle : blockString;
+  if (!entityUid || !identityKind || typeof title !== "string") {
     return {
-      pageUid,
+      entityUid,
+      identityKind,
       title,
-      label: title ?? pageUid ?? "Unknown page",
+      label: title ?? entityUid ?? "Unknown source",
       feature: null,
       diagnostics: [
         diagnostic({
-          code: "place.invalid-page",
-          pageUid: pageUid ?? "unknown",
+          code: "place.invalid-entity",
+          entityUid: entityUid ?? "unknown",
+          identityKind,
           severity: "error",
-          message: "The source UID did not resolve to a Roam page.",
+          message: "The source UID did not resolve to the expected Roam page or block.",
         }),
       ],
     };
+  }
+  const identityKindMismatch = Boolean(
+    expectedIdentityKind && expectedIdentityKind !== identityKind,
+  );
+  if (identityKindMismatch) {
+    diagnostics.push(
+      diagnostic({
+        code: "place.identity-kind-mismatch",
+        entityUid,
+        identityKind,
+        severity: "error",
+        message: `The source was expected to resolve to a ${expectedIdentityKind}, but Roam returned a ${identityKind}.`,
+      }),
+    );
   }
 
   const raw = Object.fromEntries(
@@ -292,86 +336,98 @@ export function resolvePlaceEntity(
       chooseField(entity, attributeTitle, attributeUids, diagnostics),
     ]),
   );
-  const titlesByUid =
-    attributeTitlesByUid ??
-    new Map([...attributeUids].map(([titleValue, uid]) => [uid, titleValue]));
-  const projection = projectAttributes(entity, { attributeTitlesByUid: titlesByUid });
-  diagnostics.push(...projection.diagnostics);
-  const lat = coordinate(raw.latitude, {
-    min: -90,
-    max: 90,
-    field: fields.latitude,
-    pageUid,
-    diagnostics,
-  });
-  const lon = coordinate(raw.longitude, {
-    min: -180,
-    max: 180,
-    field: fields.longitude,
-    pageUid,
-    diagnostics,
-  });
-  const parsedGeometry = parseGeometry(raw.geometry, pageUid, diagnostics);
-  let geometry = parsedGeometry.geometry;
-
-  if ((lat == null) !== (lon == null)) {
-    diagnostics.push(
-      diagnostic({
-        code: "place.incomplete-coordinates",
-        pageUid,
-        message: "Latitude and Longitude must both be present and valid before the page can be mapped as a point.",
-      }),
-    );
-  }
-  if (lat != null && lon != null) {
-    if (
-      geometry?.type === "Point" &&
-      (geometry.coordinates[0] !== lon || geometry.coordinates[1] !== lat)
-    ) {
+  if (allowInlineCoordinates && identityKind === "block" && isGeoUri(blockString)) {
+    if (raw.coordinates != null) {
       diagnostics.push(
         diagnostic({
           code: "place.conflicting-location",
-          pageUid,
-          message: "Latitude/Longitude and Point Geometry disagree; Latitude/Longitude take precedence.",
+          entityUid,
+          identityKind,
+          field: fields.coordinates,
+          message: "This block contains both a bare geo URI and a Coordinates attribute; the attribute takes precedence.",
+        }),
+      );
+    } else {
+      raw.coordinates = blockString.trim();
+    }
+  }
+  const titlesByUid =
+    attributeTitlesByUid ??
+    new Map([...attributeUids].map(([titleValue, uid]) => [uid, titleValue]));
+  const projection = projectAttributes(entity, {
+    attributeTitlesByUid: titlesByUid,
+    identityKind,
+  });
+  diagnostics.push(...projection.diagnostics);
+  const coordinateValuesConflict = diagnostics.some(
+    (item) =>
+      item.code === "place.conflicting-field-values" && item.field === fields.coordinates,
+  );
+  const coordinates = coordinateValuesConflict
+    ? null
+    : parseCoordinates(raw.coordinates, {
+        entityUid,
+        identityKind,
+        field: fields.coordinates,
+        diagnostics,
+      });
+  const parsedGeometry = parseGeometry(raw.geometry, entityUid, identityKind, diagnostics);
+  let geometry = parsedGeometry.geometry;
+
+  if (coordinates) {
+    if (geometry) {
+      diagnostics.push(
+        diagnostic({
+          code: "place.conflicting-location",
+          entityUid,
+          identityKind,
+          message: "Coordinates and Geometry are both present; Coordinates take precedence.",
         }),
       );
     }
-    geometry = { type: "Point", coordinates: [lon, lat] };
+    geometry = { type: "Point", coordinates: [coordinates.lon, coordinates.lat] };
   }
 
   if (!geometry) {
     diagnostics.push(
       diagnostic({
         code: "place.no-renderable-location",
-        pageUid,
+        entityUid,
+        identityKind,
         message: parsedGeometry.reference
-          ? "The page has referenced geometry but no directly renderable point."
-          : "The page has no valid coordinate pair or GeoJSON geometry.",
+          ? "The source has referenced geometry but no directly renderable point."
+          : "The source has no valid Coordinates geo URI or GeoJSON geometry.",
       }),
     );
   }
 
-  const label = pageTitleLeaf(title) || title;
-  const feature = geometry
+  const label = identityKind === "page"
+    ? pageTitleLeaf(title) || title
+    : coordinates && isGeoUri(title)
+      ? `${coordinates.lat}, ${coordinates.lon}`
+      : title.trim() || "Untitled point";
+  const feature = geometry && !identityKindMismatch
     ? {
         type: "Feature",
-        id: `page:${pageUid}`,
+        id: `${identityKind}:${entityUid}`,
         geometry,
         properties: {
           ...projection.properties,
-          [FEATURE_PROPERTIES.identityKind]: "page",
-          [FEATURE_PROPERTIES.pageUid]: pageUid,
+          [FEATURE_PROPERTIES.identityKind]: identityKind,
+          [FEATURE_PROPERTIES.entityUid]: entityUid,
           [FEATURE_PROPERTIES.title]: title,
           [FEATURE_PROPERTIES.label]: label,
           [FEATURE_PROPERTIES.address]: raw.address == null ? null : String(raw.address),
           [FEATURE_PROPERTIES.geocoderId]:
             raw.geocoderId == null ? null : String(raw.geocoderId),
+          [FEATURE_PROPERTIES.uncertaintyMeters]: coordinates?.uncertainty ?? null,
         },
       }
     : null;
 
   return {
-    pageUid,
+    entityUid,
+    identityKind,
     title,
     label,
     address: raw.address == null ? null : String(raw.address),
@@ -383,6 +439,13 @@ export function resolvePlaceEntity(
     feature,
     diagnostics,
   };
+}
+
+export function resolvePlaceEntity(entity, attributeUids, options = {}) {
+  return resolveLocatedEntity(entity, attributeUids, {
+    ...options,
+    expectedIdentityKind: "page",
+  });
 }
 
 export function createPlaceResolver(api, { fields = PLACE_FIELDS } = {}) {
@@ -400,12 +463,21 @@ export function createPlaceResolver(api, { fields = PLACE_FIELDS } = {}) {
     return attributeUidsPromise;
   }
 
-  async function resolvePages(pageUids) {
-    const uniquePageUids = [...new Set(pageUids.filter(Boolean))];
+  async function resolveEntities(requests) {
+    const normalized = requests.map((request) =>
+      typeof request === "string"
+        ? { entityUid: request, identityKind: "page", allowInlineCoordinates: false }
+        : request,
+    );
+    const uniqueEntityUids = [
+      ...new Set(normalized.map(({ entityUid }) => entityUid).filter(Boolean)),
+    ];
     const [entities, legacyUids] = await Promise.all([
       typeof api.pullMany === "function"
-        ? api.pullMany(PLACE_ENTITY_PATTERN, uniquePageUids)
-        : Promise.all(uniquePageUids.map((uid) => api.pull(PLACE_ENTITY_PATTERN, uid))),
+        ? api.pullMany(LOCATION_ENTITY_PATTERN, uniqueEntityUids)
+        : Promise.all(
+            uniqueEntityUids.map((uid) => api.pull(LOCATION_ENTITY_PATTERN, uid)),
+          ),
       attributeUids(),
     ]);
     const entitiesByUid = new Map(
@@ -433,11 +505,23 @@ export function createPlaceResolver(api, { fields = PLACE_FIELDS } = {}) {
         if (uid && title) attributeTitlesByUid.set(uid, title);
       }
     }
-    return pageUids.map((pageUid) =>
-      resolvePlaceEntity(entitiesByUid.get(pageUid) ?? { ":block/uid": pageUid }, legacyUids, {
-        fields,
-        attributeTitlesByUid,
-      }),
+    return normalized.map(({ entityUid, identityKind, allowInlineCoordinates = false }) =>
+      resolveLocatedEntity(
+        entitiesByUid.get(entityUid) ?? { ":block/uid": entityUid },
+        legacyUids,
+        {
+          fields,
+          attributeTitlesByUid,
+          expectedIdentityKind: identityKind,
+          allowInlineCoordinates,
+        },
+      ),
+    );
+  }
+
+  async function resolvePages(pageUids) {
+    return resolveEntities(
+      pageUids.map((entityUid) => ({ entityUid, identityKind: "page" })),
     );
   }
 
@@ -445,16 +529,16 @@ export function createPlaceResolver(api, { fields = PLACE_FIELDS } = {}) {
     return (await resolvePages([pageUid]))[0];
   }
 
-  return { resolvePage, resolvePages };
+  return { resolveEntities, resolvePage, resolvePages };
 }
 
 export const __test = {
   chooseField,
-  coordinate,
   displayValue: displayAttributeValue,
   exactMetaChildren,
   harcCandidates,
   legacyCandidates,
+  parseCoordinates,
   parseGeometry,
   structuralCandidates,
   validGeometry,

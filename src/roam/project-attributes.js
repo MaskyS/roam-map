@@ -44,12 +44,12 @@ export function imageUrlFromMarkdown(value) {
   }
 }
 
-function projectionDiagnostic({ code, pageUid, attributeTitle, message, detail = null }) {
+function projectionDiagnostic({ code, entityUid, attributeTitle, message, detail = null }) {
   return {
-    key: [code, pageUid, attributeTitle, detail].filter(Boolean).join(":"),
+    key: [code, entityUid, attributeTitle, detail].filter(Boolean).join(":"),
     code,
     severity: "warning",
-    pageUid,
+    entityUid,
     field: attributeTitle,
     message,
     ...(detail ? { detail } : {}),
@@ -119,8 +119,11 @@ export function legacyAttributeUids(entity) {
   return [...uids];
 }
 
-export function projectAttributes(entity, { attributeTitlesByUid = new Map() } = {}) {
-  const pageUid = entity?.[":block/uid"] ?? "unknown";
+export function projectAttributes(
+  entity,
+  { attributeTitlesByUid = new Map(), identityKind = null } = {},
+) {
+  const entityUid = entity?.[":block/uid"] ?? "unknown";
   const properties = {};
   const diagnostics = [];
   const assets = [];
@@ -137,7 +140,7 @@ export function projectAttributes(entity, { attributeTitlesByUid = new Map() } =
       diagnostics.push(
         projectionDiagnostic({
           code: "attribute.reserved-title",
-          pageUid,
+          entityUid,
           attributeTitle: title,
           message: `The ${COMPILER_PROPERTY_PREFIX} property prefix is reserved for values owned by Roam Map.`,
         }),
@@ -151,7 +154,7 @@ export function projectAttributes(entity, { attributeTitlesByUid = new Map() } =
         diagnostics.push(
           projectionDiagnostic({
             code: "attribute.unsupported-value",
-            pageUid,
+            entityUid,
             attributeTitle: title,
             message: `${title} has no text, number, boolean, or page-title value that can be projected to GeoJSON.`,
           }),
@@ -169,7 +172,8 @@ export function projectAttributes(entity, { attributeTitlesByUid = new Map() } =
         sourceUrl,
         attributeTitle: title,
         attributeUid: group.attributeUid,
-        pageUid,
+        entityUid,
+        identityKind,
         width: 64,
         height: 64,
         pixelRatio: 2,

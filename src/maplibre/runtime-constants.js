@@ -1,5 +1,8 @@
 export const MAP_SOURCE_ID = "roam-map-features";
 export const DEFAULT_POINT_LAYER_ID = "roam-map/default-points";
+export const SELECTED_POINT_LAYER_ID = "roam-map/selected-point";
+export const SELECTED_ENTITY_STATE_KEY = "roam-map/selected-entity-uid";
+export const SELECTED_POINT_ZOOM_FLOOR = 15;
 export const DEFAULT_MARKER_IMAGE_ID = "roam-map/default-marker";
 export const DEFAULT_MARKER_COLOR = "#137cbd";
 export const DEFAULT_MARKER_RADIUS = 8;

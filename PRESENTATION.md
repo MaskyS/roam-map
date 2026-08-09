@@ -21,12 +21,14 @@ When MapLibre already has a concept such as `get`, `case`, `coalesce`,
 
 ## Status of the decisions
 
-The current checkpoint compiles direct page sources into one stable GeoJSON
+The current checkpoint compiles direct page and coordinate-block sources into one stable GeoJSON
 source, projects readable Roam attributes, registers image assets, and accepts
 validated native MapLibre layers over that source. The earlier
 `map/marker`, `map/color`, and `map/radius` circle path has been removed; its
 findings remain documented below as history, not compatibility behavior. Native
-query sources, global state, and a portrait preset remain future work.
+query sources and a portrait preset remain future work. Global state is
+implemented narrowly for transient selected-entity styling; general map-wide
+presentation options remain future work.
 
 | Area | Current direction | Status |
 |---|---|---|
@@ -37,8 +39,9 @@ query sources, global state, and a portrait preset remain future work.
 | Native query source | Normalize results to explicit page or block subjects | Not implemented |
 | Cross-source identity | Deduplicate canonical features; retain memberships and provenance | Direct sources implemented; query memberships pending |
 | Per-feature presentation | Native MapLibre expressions | Implemented over the compiled source |
-| Map-wide presentation values | MapLibre `global-state` | Not implemented |
+| Map-wide presentation values | MapLibre `global-state` | Implemented for transient selected-entity UID; authored durable options are not implemented |
 | Per-map basemap selection | Readable catalog name through `map/basemap` | Implemented |
+| Per-map container size | Responsive maximum width and height through `map/size` | Implemented as one atomic value |
 | Graph-wide basemap providers | Versioned provider-keyed `extensionAPI.settings` value | Implemented for MapTiler; ready for different provider adapters |
 | Keyless satellite context | EOxCloudless 2016 native raster style | Implemented; service terms still require an honest notice |
 | BYOK satellite and hybrid | MapTiler `satellite-v4` and `hybrid-v4` style URLs | Implemented; live key/account verification required |
@@ -98,7 +101,7 @@ Roam Map should therefore use them differently:
 ```text
 user writes and reads       Profile Picture
 compiler resolves internally attribute-page-uid
-compiler watches internally  attribute-page-uid and source page UID
+compiler watches internally  attribute-page-uid and source entity UID
 MapLibre feature property    Profile Picture
 ```
 
@@ -117,7 +120,7 @@ would continue through an opaque identifier.
 
 ### A GeoJSON feature separates geometry and properties
 
-Roam Map compiles page-backed inputs to GeoJSON features. In simplified form:
+Roam Map compiles page- and block-backed inputs to GeoJSON features. In simplified form:
 
 ```js
 {
@@ -129,7 +132,8 @@ Roam Map compiles page-backed inputs to GeoJSON features. In simplified form:
   properties: {
     "Profile Picture": "roam-map:image:abc123",
     "Birthday": "1940-05-17",
-    "roam/pageUid": "the-person-page-uid",
+    "roam/entityUid": "the-person-page-uid",
+    "roam/identityKind": "page",
     "roam/title": "People/Alan Kay"
   }
 }
@@ -160,14 +164,16 @@ snapshot:
 
 ```js
 {
-  version: 1,
+  version: 2,
   mapUid,
   clickId,  // increments for every click, including the same marker twice
-  pageUid,  // the marker nearest the click
-  pageUids, // every distinct rendered hit, nearest first
-  coincidentPageUids, // pages sharing the selected visible marker position
-  feature,  // the feature for pageUid
-  features, // compiled GeoJSON snapshots in the same order as pageUids
+  trigger: "marker",
+  entityUid,  // page or block UID for the marker nearest the click
+  identityKind, // "page" or "block" for the nearest marker
+  entityUids, // every distinct rendered hit, nearest first
+  coincidentEntityUids, // entities sharing the selected visible position
+  feature,  // the feature for entityUid
+  features, // compiled GeoJSON snapshots in the same order as entityUids
   point,    // {x, y} relative to the map canvas
   lngLat,   // {lng, lat}
   clientPoint, // {x, y} relative to the browser viewport
@@ -178,10 +184,10 @@ snapshot:
 The component can lay out any React/JSX UI, create a portal, query graph data
 such as `Image::` through the Alpha API, call other supported libraries, or run
 an effect and return `null`. With `Marker click` present, the extension adds no
-card, close control, coincident selector, or page action. Without it, the stock
+card, close control, coincident selector, or entity action. Without it, the stock
 Blueprint popover and card provide selection and **Open in sidebar**. When two
 marker circles merely overlap, the nearest center wins and no chooser appears.
-The chooser remains for pages whose marker centers coincide within one screen
+The chooser remains for entities whose marker centers coincide within one screen
 pixel.
 
 Every user click creates a new `clickId` and therefore a fresh component mount;
@@ -202,7 +208,7 @@ Roam's current extension API does not register components for `roam/render`.
 Roam Map instead publishes a small versioned JS/JSX API at
 `window.RoamMap.components`: `MarkerPopover`, `MarkerCard`,
 `MarkerCardDetails`, and `MarkerCardActions`. The stock fallback uses those same
-components. `MarkerCard` exposes the active page and feature, close and sidebar
+components. `MarkerCard` exposes the active entity and feature, close and sidebar
 actions, and action state to a render-function child, so a graph author can
 reuse, extend, or replace its interior without copying the controller logic.
 `MarkerPopover` forwards Blueprint 3 Popover props and exposes its close state
@@ -210,7 +216,7 @@ to a function child. The namespace is installed and removed with the extension.
 
 Image Markdown remains an opaque runtime ID in feature properties, preserving
 the MapLibre expression and asset boundary. Roam-backed component code should
-use `pageUid` and the Alpha API to read the original `Image::` value. That keeps
+use `entityUid` and the Alpha API to read the original `Image::` value. That keeps
 graph reads in user code instead of exposing the map's internal asset records
 as a click-component API.
 
@@ -429,7 +435,8 @@ all memberships and provenance:
 ```js
 properties: {
   "Profile Picture": "roam-map:image:abc123",
-  "roam/pageUid": "person-page-uid",
+  "roam/entityUid": "person-page-uid",
+  "roam/identityKind": "page",
   "roam/groups": ["People with locations", "VIPs"]
 }
 ```
@@ -571,7 +578,7 @@ This is valid MapLibre but needlessly indirect for authored attributes:
 
 The attribute page title is already unique within the graph and portable
 between graphs. Roam Map should reserve the `roam/` prefix for values it owns,
-such as `roam/pageUid`, `roam/title`, and provenance fields. If a graph really
+such as `roam/entityUid`, `roam/identityKind`, `roam/title`, and provenance fields. If a graph really
 contains an attribute page whose title conflicts with that reserved prefix,
 the compiler should report a diagnostic rather than silently rename it.
 
@@ -599,7 +606,7 @@ collisions.
 Three related namespaces appear in this design and must stay distinct:
 
 - feature-property keys owned by the compiler use the `roam/` prefix, such as
-  `roam/pageUid`;
+  `roam/entityUid`;
 - documented built-in style images use the `roam-map/` prefix, such as
   `roam-map/default-marker`, because style image IDs share MapLibre's image
   namespace with sprite entries, not with attribute titles; and
@@ -680,7 +687,13 @@ property](https://maplibre.org/maplibre-style-spec/root/#state), and the runtime
 can update a value through
 [`map.setGlobalStateProperty`](https://maplibre.org/maplibre-gl-js/docs/API/classes/Map/#setglobalstateproperty).
 
-This lets a readable Roam option feed a native MapLibre expression:
+Roam Map currently uses this mechanism for one transient, per-instance value:
+`roam-map/selected-entity-uid`. The built-in selection ring and user-authored
+layers can compare it with the feature's `roam/entityUid`. The runtime restores
+the value after `Map#setStyle`, and selection never becomes graph data.
+
+The following marker-color option remains a design example, not implemented
+syntax:
 
 ```text
 Options
@@ -705,9 +718,10 @@ MapLibre GL JS added global style state in version 5.6. Roam Map currently pins
 implemented in MapLibre Native, which should be recorded if the rendering
 target ever changes.
 
-Roam Map must validate values before calling the API, namespace its keys under
-`roam/`, and restore its global-state values after a style replacement. Global
-state is a bridge into layer expressions, not a second application-state store.
+Roam Map must validate values before calling the API, namespace runtime-owned
+keys under `roam-map/`, and restore its global-state values after a style
+replacement. Global state is a bridge into layer expressions, not a second
+application-state store.
 
 ## Images are data plus runtime resources
 
@@ -1011,6 +1025,22 @@ The map toolbar's selector is deliberately a preview. It lets someone compare
 views without writing to the graph. The outline's `map/basemap` value remains
 the saved choice because it is visible, referenceable, and exportable.
 
+## Container size is Roam presentation state
+
+`map/size:: 900 × 480` controls the containing map view, not the MapLibre style
+or camera. The first dimension is a maximum width and therefore still yields
+to a narrower Roam host. A mounted view keeps pointer and keyboard changes in
+React while the gesture is active, and its existing `ResizeObserver` tells
+MapLibre to recalculate the canvas. The final validated pair is written once as
+an ordinary child of the map definition. Reset deletes that child and restores
+responsive CSS.
+
+This deliberately avoids Roam's internal `:block/props` image-size shape. It
+also keeps maximum width responsive and does not persist pan, zoom, bearing, or
+pitch. When one definition is rendered in several places, the durable size is
+shared through that definition; the mounted React roots, observers, and
+MapLibre maps remain independent.
+
 ### Why the key is not a map attribute
 
 A MapTiler browser key is client-visible by design. Putting it in a password
@@ -1132,14 +1162,14 @@ The current suite proves:
   back to OpenFreeMap Liberty; authenticated URLs are redacted from runtime
   errors.
 - Stale image work is aborted or ignored by its generation guard.
-- Source contributions deduplicate centrally by page UID before one batched
-  place-resolution pass, while retaining every contributing block as
+- Source contributions deduplicate centrally by entity kind and UID before one
+  batched location-resolution pass, while retaining every contributing block as
   provenance.
 - Invalid GeoJSON positions, rings, and nested geometry collections are
   diagnosed before the renderer boundary.
 - Pull-watch reconciliation cannot publish a stale generation or leak a watch
   whose asynchronous registration finishes after replacement or disposal.
-- Clicking coincident rendered features exposes every distinct page UID for
+- Clicking coincident rendered features exposes every distinct entity UID for
   selection instead of silently choosing the top-painted feature.
 - Marker click blocks are configuration rather than source leaves; inline and
   reusable code preserve stable UIDs, and reusable code adds a focused watch.
@@ -1148,31 +1178,31 @@ The current suite proves:
 - Repeated clicks get distinct IDs, while graph refreshes do not replay a
   previously captured click.
 - One map-level click query deduplicates overlapping interactive layers.
-- Marker-click contexts identify selected pages without exposing internal image
+- Marker-click contexts identify selected entities without exposing internal image
   descriptors; component code can read `Image::` through the Alpha API.
 - The stock public components share Roam's Blueprint 3 and React 18 runtimes
   and the `window.RoamMap` namespace is removed on extension unload.
-- Page actions use Roam's documented right-sidebar outline window.
+- Page and block actions use Roam's documented right-sidebar outline window.
 
 Use the installed style-spec package in focused tests when testing MapLibre
 semantics. In particular, verify the difference between an unavailable image
 and a missing property rather than mocking both as the same value.
 
-When the query adapter lands, add focused contracts for result modes,
-cross-source contributions, canonical deduplication, totals, caps, truncation,
-failure, cancellation, and stale generations. A directly referenced page and
-the same page normalized from a query must then produce the same geometry and
-public attribute properties.
+The query adapter has focused contracts for containing-page normalization,
+exact Datalog page and block UIDs, cross-source contributions, canonical
+deduplication, caps, truncation, failure isolation, and stale generations. A
+directly referenced page and the same page normalized from a query must produce
+the same geometry and public attribute properties.
 
 ### Current live Roam fixture
 
-Use `[[Roam Map Test]]` in the `maskys` graph. Its direct-source map contains
-nine existing person pages plus the two native layers shown in Map A. Verify:
+Use `[[Roam Map Test]]` in a development graph. Its direct-source map contains
+several fixture person pages plus the two native layers shown in Map A. Verify:
 
-1. Reload through `roam reload-dev-extensions --graph maskys` and confirm the
-   command explicitly lists `roam-map`.
+1. Reload through `roam reload-dev-extensions --graph <graph-nickname>` and
+   confirm the command explicitly lists `roam-map`.
 2. Confirm both `MapLibre layer` parents compile without a map diagnostic and
-   the map reports nine sources, nine mapped, and zero unmapped.
+   the map reports matching source and mapped counts with zero unmapped.
 3. Change one layer value and confirm the native layer updates through the
    graph watch without remounting the map or rewriting source pages.
 4. Edit one existing person's `Profile Picture` and confirm the feature and
@@ -1191,21 +1221,26 @@ nine existing person pages plus the two native layers shown in Map A. Verify:
    encrypted graph when available.
 11. Confirm the graph is not rewritten and a copied native layer remains
    understandable without an inspector.
+12. Under **Block coordinate sources**, confirm the separate map reports two
+    sources, two mapped, and zero unmapped. Its bare `geo:` marker and named
+    `Coordinates` marker must both open their source blocks in the sidebar;
+    the bare feature must retain `roam/uncertaintyMeters: 14.4`.
 
 The 2026-08-07 basemap checkpoint passed 53 tests, the bundle guard, and an
-explicit CLI reload. The live nine-source People map switched from Liberty to
-EOX, retained its circular portraits and ordinary points, and showed the
-2016/10 m notice plus visible EOX/Copernicus attribution. Re-run the checks
-above after changing the compiler or runtime; the recorded observation is
-evidence, not a substitute for a new live test.
+explicit CLI reload. The live People map switched from Liberty to EOX,
+retained its circular portraits and ordinary points, and showed the 2016/10 m
+notice plus visible EOX/Copernicus attribution. Re-run the checks above after
+changing the compiler or runtime; the recorded observation is evidence, not a
+substitute for a new live test.
 
 The later OpenFreeMap catalog follow-up also passed 53 tests, the production
 build, and the bundle guard. The CLI reload explicitly listed `roam-map`. In
 Roam Desktop, the selector exposed Liberty, Positron, Bright, Dark, and Fiord
-as separate OpenFreeMap entries; the People fixture still reported nine
-sources, nine mapped, and zero unmapped after reload. UI automation did not
-complete the five visual style switches, so verification step 6 remains open
-and should not be inferred from successful endpoint requests or unit tests.
+as separate OpenFreeMap entries; the People fixture still reported matching
+source and mapped counts with zero unmapped after reload. UI automation did
+not complete the five visual style switches, so verification step 6 remains
+open and should not be inferred from successful endpoint requests or unit
+tests.
 
 The 2026-08-08 organization and state simplification passed 56 tests, the
 production build, and the bundle guard. It did not receive a new authenticated
@@ -1213,11 +1248,20 @@ live-Roam pass because no signed-in graph was available. In particular, do not
 infer the mount, watch, or coincident-selection behavior from unit tests alone;
 rerun the live fixture after loading this build in Roam.
 
-When #9 is implemented, add a second map fed by a child native query. Compare
-its feature UIDs, properties, and presentation with the direct map; exercise
-page and block result modes; add and remove matches through explicit Refresh;
-and inspect truncation, failure, and ambiguity diagnostics. This is the parity
-work tracked by #22.
+The 2026-08-09 geo-URI and block-identity checkpoint passed 120 tests, the
+production build, and the bundle guard. After an explicit developer-extension
+reload, the live **Block coordinate sources** fixture reported two mapped
+results: the bare URI label and the named Curepipe block. Opening the named
+result displayed that exact block, its `Coordinates` child, and its `Address`
+child in Roam's right-sidebar outline. The older page fixtures still contain
+the retired development-only latitude/longitude form and therefore remain
+unmapped until their fixture data is reauthored; no migration was added.
+
+The query-source fixture includes a map fed by a child native query and maps fed
+by fenced Datalog. Compare their feature UIDs, properties, and presentation
+with direct sources; exercise native containing-page results and exact Datalog
+page and block results; add and remove matches through explicit **Refresh**;
+and inspect truncation, failure, and invalid-result diagnostics.
 
 Then run:
 

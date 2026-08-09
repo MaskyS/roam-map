@@ -1,4 +1,4 @@
-// The compiler is the join point for every source adapter: it merges page identity,
+// The compiler is the join point for every source adapter: it merges entity identity,
 // bulk-resolves Roam records, and emits one renderer-independent map plan.
 import { FEATURE_PROPERTIES } from "./feature-properties.js";
 
@@ -14,10 +14,12 @@ function uniqueDiagnostics(diagnostics) {
 
 function renderDiagnostic(item, record) {
   return {
-    key: `render.unsupported-geometry:${item.pageUid}`,
+    key: `render.unsupported-geometry:${item.identityKind}:${item.entityUid}`,
     code: "render.unsupported-geometry",
     severity: "warning",
-    pageUid: item.pageUid,
+    entityUid: item.entityUid,
+    identityKind: item.identityKind,
+    entityTitle: record.label ?? null,
     sourceBlockUid: item.provenance[0]?.sourceBlockUid ?? null,
     message: `${record.label} has valid ${record.feature.geometry.type} geometry, but this milestone renders points only.`,
   };
@@ -26,19 +28,22 @@ function renderDiagnostic(item, record) {
 function mergeContributions(contributions = []) {
   const items = new Map();
   for (const contribution of contributions) {
-    if (!contribution?.pageUid) continue;
+    if (!contribution?.entityUid || !contribution?.identityKind) continue;
+    const identity = `${contribution.identityKind}:${contribution.entityUid}`;
     const provenance = Array.isArray(contribution.provenance)
       ? contribution.provenance
       : [contribution.provenance].filter(Boolean);
-    const existing = items.get(contribution.pageUid);
+    const existing = items.get(identity);
     if (existing) {
       existing.provenance.push(...provenance);
+      existing.allowInlineCoordinates ||= Boolean(contribution.allowInlineCoordinates);
       continue;
     }
-    items.set(contribution.pageUid, {
-      kind: "page",
-      pageUid: contribution.pageUid,
+    items.set(identity, {
+      identityKind: contribution.identityKind,
+      entityUid: contribution.entityUid,
       title: contribution.title ?? null,
+      allowInlineCoordinates: Boolean(contribution.allowInlineCoordinates),
       provenance,
     });
   }
@@ -50,20 +55,22 @@ function resolveFailure(item, error) {
     item,
     record: null,
     error: {
-      key: `place.resolve-failed:${item.pageUid}`,
+      key: `place.resolve-failed:${item.identityKind}:${item.entityUid}`,
       code: "place.resolve-failed",
       severity: "error",
-      pageUid: item.pageUid,
+      entityUid: item.entityUid,
+      identityKind: item.identityKind,
+      entityTitle: item.title ?? null,
       sourceBlockUid: item.provenance[0]?.sourceBlockUid ?? null,
-      message: `The place page could not be read: ${error?.message ?? String(error)}`,
+      message: `The location source could not be read: ${error?.message ?? String(error)}`,
     },
   };
 }
 
 async function resolvePlaces(items, placeResolver) {
-  if (typeof placeResolver.resolvePages === "function") {
+  if (typeof placeResolver.resolveEntities === "function") {
     try {
-      const records = await placeResolver.resolvePages(items.map(({ pageUid }) => pageUid));
+      const records = await placeResolver.resolveEntities(items);
       return items.map((item, index) => ({ item, record: records[index] }));
     } catch (error) {
       return items.map((item) => resolveFailure(item, error));
@@ -71,8 +78,17 @@ async function resolvePlaces(items, placeResolver) {
   }
   return Promise.all(
     items.map(async (item) => {
+      if (item.identityKind !== "page") {
+        return resolveFailure(
+          item,
+          new Error("The configured location resolver does not support block sources."),
+        );
+      }
       try {
-        return { item, record: await placeResolver.resolvePage(item.pageUid) };
+        return {
+          item,
+          record: await placeResolver.resolvePage(item.entityUid),
+        };
       } catch (error) {
         return resolveFailure(item, error);
       }
@@ -97,7 +113,14 @@ export function createMapCompiler({ sourceCompiler, placeResolver }) {
         continue;
       }
       const { item, record } = entry;
-      diagnostics.push(...record.diagnostics);
+      const entityTitle = record.label ?? item.title ?? null;
+      diagnostics.push(
+        ...record.diagnostics.map((diagnostic) =>
+          diagnostic.entityUid === item.entityUid && diagnostic.entityTitle == null
+            ? { ...diagnostic, entityTitle }
+            : diagnostic,
+        ),
+      );
       for (const uid of record.attributeUids ?? []) attributeWatchUids.add(uid);
       for (const asset of record.assets ?? []) {
         if (!assets.has(asset.id)) assets.set(asset.id, asset);
@@ -130,8 +153,11 @@ export function createMapCompiler({ sourceCompiler, placeResolver }) {
       resolved,
       featureCollection: { type: "FeatureCollection", features },
       options: source.options,
+      optionSourceUids: source.optionSourceUids ?? {},
       layers: source.layers ?? [],
       markerClick: source.markerClick ?? null,
+      resultsList: source.resultsList ?? null,
+      dynamicSources: source.dynamicSources ?? [],
       assets: [...assets.values()],
       diagnostics: uniqueDiagnostics(diagnostics),
       counts: {

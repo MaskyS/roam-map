@@ -13,14 +13,14 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function compiled(pageUids = [], sourceWatchUids = [], attributeWatchUids = []) {
+function compiled(entityUids = [], sourceWatchUids = [], attributeWatchUids = []) {
   return {
-    sourceItems: pageUids.map((pageUid) => ({ pageUid })),
+    sourceItems: entityUids.map((entityUid) => ({ entityUid })),
     sourceWatchUids,
     attributeWatchUids,
     featureCollection: { type: "FeatureCollection", features: [] },
     diagnostics: [],
-    counts: { sources: pageUids.length, mapped: 0, unmapped: pageUids.length },
+    counts: { sources: entityUids.length, mapped: 0, unmapped: entityUids.length },
   };
 }
 
@@ -59,7 +59,7 @@ test("a stale compilation cannot overwrite a newer refresh", async () => {
   await starting;
 
   assert.deepEqual(
-    states.filter(({ type }) => type === "result").map(({ result }) => result.sourceItems[0].pageUid),
+    states.filter(({ type }) => type === "result").map(({ result }) => result.sourceItems[0].entityUid),
     ["new"],
   );
   await session.stop();

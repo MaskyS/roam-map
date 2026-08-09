@@ -61,7 +61,7 @@ The 2026-08-08 reorganization made those boundaries visible in the repository:
 | Area | Modules | Owns |
 |---|---|---|
 | Roam boundary | `src/roam/` | Alpha API calls and attribute normalization |
-| Pure map pipeline | `src/map/` | Definitions, contributions, canonical page identity, place records, options, layers, compilation, and live invalidation |
+| Pure map pipeline | `src/map/` | Definitions, contributions, canonical page-or-block identity, location records, options, layers, compilation, and live invalidation |
 | MapLibre boundary | `src/maplibre/` | MapLibre instances, styles, sources, images, layers, and renderer events |
 | Graph settings | `src/settings/` | Basemap providers, registry subscription, and settings UI |
 | Visible instances | `src/ui/` | React rendering, local error isolation, and the one provisional DOM mount seam |
@@ -99,7 +99,7 @@ shows how little machinery the plugin object itself contains. The surrounding
 state and view decide how each contribution is used.
 
 For Roam Map, the transferable principle is that a source parser should parse
-sources, a place resolver should resolve page-backed locations, and the
+sources, a location resolver should resolve page- and block-backed locations, and the
 MapLibre boundary should own MapLibre. None should inherit from one large map
 controller. Initially these modules should be imported and assembled directly;
 there is no need for runtime plugin installation.
@@ -225,7 +225,8 @@ not be copied into every map. Per-map sources, layers, and saved choices belong
 in the outline so that they remain visible, referenceable, and exportable. The
 implemented split follows this rule: each keyed provider is configured once
 through `extensionAPI.settings`, while each map selects one of the resulting
-catalog names through `map/basemap`.
+catalog names through `map/basemap` and may save its responsive maximum width
+and height in one atomic `map/size` value.
 
 ### React and Blueprint are already present
 
@@ -351,16 +352,16 @@ writes only ordinary attribute blocks. Roam Map should follow the same rule:
 - never write `:harc/*`, `:entity/attrs`, or `:attrs/lookup` directly;
 - read both representations when they are available, rather than stopping as
   soon as one produces a value;
-- select a complete, valid current HARC coordinate as authoritative; use a
-  complete, valid compatibility coordinate only when HARC has no usable value;
-- when both representations produce usable values, compare their normalized
-  coordinates and report disagreement while retaining the HARC value;
-- resolve a legacy direct `roam/meta::` child back to its parent page;
+- treat the current HARC `Coordinates` value as authoritative when present,
+  even if it is invalid; use a compatibility value only when HARC has no value;
+- when both representations produce values, compare them and report
+  disagreement while retaining the HARC value;
+- resolve an exact direct `roam/meta::` child back to its parent page or block;
 - treat zero latitude or longitude as valid;
 - report absent values, malformed values, conflicts within one representation,
   and disagreement between representations separately.
 
-The page resolver is one resolver, not the universal data model. Map-local
+The location resolver is one resolver, not the universal data model. Map-local
 points need not create pages merely to pass through it.
 
 ### Queries, search, and `:q` are not interchangeable
@@ -581,8 +582,9 @@ is added later, handler ordering and “handled” semantics must be specified t
 
 ## Roam-native authoring forms
 
-The forms below are proposals. Except where linked to Roam documentation, they
-are not existing Roam syntax.
+Direct pages, coordinate blocks, `map/size`, `map/basemap`, and native layers
+below are implemented. Query, reusable-outline, GeoJSON-source, and generalized
+option forms remain design proposals unless the text says otherwise.
 
 ### Direct pages remain the easiest case
 
@@ -592,29 +594,20 @@ are not existing Roam syntax.
   [[Port Louis]]
 ```
 
-For the first milestone, one direct-page source block must contain exactly one
-complete page-link expression after surrounding whitespace is removed. A
-balanced delimiter scanner identifies the outer expression, so the nested page
-title `[[Cafe]]/Artisan Coffee` is not mistaken for two top-level inputs. The
-parser rejects trailing prose and multiple top-level page links with an
-ambiguity diagnostic; a later explicit “all references” source may support
-those forms if they prove useful.
-
-The scanner extracts the exact outer page title. The Alpha API then resolves
-that title to a page entity, and the pulled `:block/refs` collection confirms
-the stable UID. The implementation must not take the first member of
-`:block/refs`: it is a collection, may include pages referenced inside a nested
-title, and does not encode syntactic occurrence order. No match, more than one
-possible outer target, or a mismatch between parsed syntax and graph references
-is a source diagnostic. The page resolver then reads location attributes. The
-title is presentation and is not retained as identity.
+One direct-page source block must resolve to one distinct page. The compiler
+uses pulled `:block/refs` data and filters nested namespace references, so the
+title `[[Cafe]]/Artisan Coffee` is not mistaken for two independent inputs.
+Surrounding prose is allowed when it still resolves to one page. Multiple
+distinct page references produce an ambiguity diagnostic. The location
+resolver then reads the page's attributes; its title is presentation, not
+identity.
 
 ### Coordinates need an unambiguous easy form
 
 A naked pair such as `-20.1609, 57.5012` is unsafe because coordinate order is
-not evident. Two forms are preferable.
+not evident. Roam Map implements two explicit forms.
 
-For a concise point, accept the standard `geo:` URI:
+For a concise point, use the standard `geo:` URI:
 
 ```text
 {{map}}
@@ -622,26 +615,25 @@ For a concise point, accept the standard `geo:` URI:
 ```
 
 [RFC 5870](https://www.rfc-editor.org/rfc/rfc5870.html#section-3.3) defines the
-order as latitude, longitude and defaults to WGS84. The parser should reject
+order as latitude, longitude and defaults to WGS84. The parser rejects
 non-finite numbers, latitude outside `[-90, 90]`, and longitude outside
-`[-180, 180]`. The first adapter should accept only two-dimensional WGS84
-locations, with either no `crs` parameter or `crs=wgs84`. It must reject an
-unsupported CRS rather than silently reinterpret it. An uncertainty parameter
-may be preserved as feature metadata; altitude and other parameters can wait
-until their semantics are implemented explicitly.
+`[-180, 180]`. It accepts only two-dimensional WGS84 locations, with either no
+`crs` parameter or `crs=wgs84`. It rejects an unsupported CRS rather than
+silently reinterpreting it. The non-negative `u` uncertainty parameter is
+preserved as feature metadata. Altitude, unknown parameters, exponent notation,
+Markdown links, and trailing prose are rejected.
 
 For a named, extensible point, ordinary Roam attributes are more natural:
 
 ```text
 {{map}}
   Port Louis Waterfront
-    Latitude:: -20.1609
-    Longitude:: 57.5012
+    Coordinates:: geo:-20.1609,57.5012
 ```
 
 In the current HARC model those attributes describe the parent block. That
 block becomes the stable identity and provenance for a map-local feature. It
-can later gain a label, URL, category, accuracy, or other properties without
+can also carry a URL, category, address, or other properties without
 being promoted to a page.
 
 Internally, both forms become the same `geo/point` value. At the GeoJSON
@@ -702,13 +694,21 @@ under a map.
 
 ### Options should stay readable
 
-Per-map options can be ordinary attributes under an `Options` block:
+Per-map options stay readable as ordinary attributes. The current checkpoint
+implements a direct `map/size` child:
+
+```text
+{{map}}
+  [[Port Louis]]
+  map/size:: 900 × 420
+```
+
+A later generalized option system can group additional options explicitly:
 
 ```text
 {{map}}
   [[Port Louis]]
   Options
-    Map/Height:: 420
     Map/Initial view:: fit
     Map/Result limit:: 200
 ```
@@ -750,7 +750,8 @@ attribute page title:
 properties: {
   "Profile Picture": "roam-map:image:abc123",
   "Population": 1200000,
-  "roam/pageUid": "stable-page-uid"
+  "roam/entityUid": "stable-page-or-block-uid",
+  "roam/identityKind": "page"
 }
 ```
 
@@ -775,6 +776,12 @@ Presentation after that boundary is native MapLibre:
 - `get` reads a per-feature property such as `Profile Picture`;
 - `global-state` reads a map-wide value set through the MapLibre API; and
 - `case`, `coalesce`, `match`, and `interpolate` compose those values.
+
+The runtime publishes the transient selected entity UID as
+`roam-map/selected-entity-uid`. A reserved ring layer compares it with
+`roam/entityUid`, stays above authored marker layers, and is restored with the
+value after style replacement. Each mounted map owns its own value; selection
+does not enter the compiled feature data or the Roam graph.
 
 A population attribute still needs an explicit native scale before it can
 sensibly control marker radius. Profile pictures are therefore a fixture for
@@ -901,7 +908,10 @@ the extension must confirm either UID and read its string through the Alpha
 API. Compiled snapshots may be cached by definition UID and revision. React
 roots, MapLibre objects, container sizes, current camera state, observers, and
 event handlers belong to the visible instance. Two views of the same definition
-must not destroy or resize each other.
+must not destroy or resize each other. During a resize, each view therefore owns
+its transient size. On gesture completion, the extension writes the validated
+`map/size` child once beneath the definition; other views of that
+definition receive the durable value through ordinary pull-watch invalidation.
 
 ### A small event model is sufficient
 
@@ -1007,9 +1017,9 @@ The first-loop issues were implemented together on
 7. [#7](https://github.com/MaskyS/roam-map/issues/7) exposes counts,
    diagnostics, refresh, fit, and page navigation.
 
-After that loop works, add one direct-coordinate issue before the query family.
-It is the smallest proof that the typed input boundary is real rather than
-documentation. Then proceed to reusable outlines
+The direct-coordinate follow-up now implements bare `geo:` blocks and named
+blocks with `Coordinates` attributes. Each retains its own block UID and opens
+that block in the right sidebar. The next source work can proceed to reusable outlines
 ([#8](https://github.com/MaskyS/roam-map/issues/8)), native queries
 ([#9](https://github.com/MaskyS/roam-map/issues/9)), search
 ([#10](https://github.com/MaskyS/roam-map/issues/10)), and explicit UID-producing
@@ -1018,14 +1028,15 @@ geometry, options, and saved views should follow observed needs from those
 sources rather than precede the product loop.
 
 The resulting vertical slice now includes the lifecycle and build harness,
-current and compatibility place resolution, ordered descendant page sources,
-central contribution deduplication by page UID, batched graph pulls, validated
+current and compatibility location resolution, ordered descendant page and
+coordinate-block sources, central contribution deduplication by entity kind
+and UID, batched graph pulls, validated
 GeoJSON geometry, title-keyed attribute projection, validated native MapLibre
 layers and image assets, named basemaps, a persistent point renderer, focused
 pull watches with stale-generation guards, and visible counts, diagnostics,
 refresh, fit, coincident-feature selection, arbitrary user-authored
 `roam/render` marker-click components, a reusable Blueprint stock card, and
-right-sidebar page navigation. Marker-click code receives a versioned,
+right-sidebar page-or-block navigation. Marker-click code receives a versioned,
 serialized event and feature snapshot and is mounted and unmounted through
 Roam's documented component API; clicks never write transient UI state to the
 graph. Query, search, and `:q` inputs remain deliberately unimplemented; the

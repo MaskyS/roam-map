@@ -10,10 +10,17 @@ import {
 import {
   DEFAULT_MARKER_COLOR,
   DEFAULT_MARKER_IMAGE_ID,
+  SELECTED_ENTITY_STATE_KEY,
+  SELECTED_POINT_LAYER_ID,
 } from "../../src/maplibre/runtime-constants.js";
 import { FEATURE_PROPERTIES } from "../../src/map/feature-properties.js";
+import { __test as layerTest } from "../../src/map/layers.js";
 import { circularImageId } from "../../src/maplibre/image-assets.js";
-import { createBasemapRegistry } from "../../src/settings/basemap-registry.js";
+import {
+  BASEMAP_SETTINGS_VERSION,
+  CUSTOM_BASEMAP_KINDS,
+  createBasemapRegistry,
+} from "../../src/settings/basemap-registry.js";
 
 class FakeBounds {
   constructor() {
@@ -34,7 +41,10 @@ class FakeMap {
     this.events = new Map();
     this.sources = new Map();
     this.layers = new Map();
+    this.layerOrder = [];
     this.images = new Map();
+    this.globalState = new Map();
+    this.zoom = options.zoom;
     this.canvas = { style: {} };
     this.removed = false;
     this.dragRotate = { disable() {} };
@@ -76,8 +86,12 @@ class FakeMap {
     return this.sources.get(id) ?? null;
   }
 
-  addLayer(layer) {
+  addLayer(layer, beforeId = null) {
     this.layers.set(layer.id, layer);
+    this.layerOrder = this.layerOrder.filter((id) => id !== layer.id);
+    const beforeIndex = beforeId ? this.layerOrder.indexOf(beforeId) : -1;
+    if (beforeIndex >= 0) this.layerOrder.splice(beforeIndex, 0, layer.id);
+    else this.layerOrder.push(layer.id);
   }
 
   getLayer(id) {
@@ -86,6 +100,15 @@ class FakeMap {
 
   removeLayer(id) {
     this.layers.delete(id);
+    this.layerOrder = this.layerOrder.filter((layerId) => layerId !== id);
+  }
+
+  moveLayer(id, beforeId = null) {
+    if (!this.layers.has(id)) throw new Error(`Unknown layer: ${id}`);
+    this.layerOrder = this.layerOrder.filter((layerId) => layerId !== id);
+    const beforeIndex = beforeId ? this.layerOrder.indexOf(beforeId) : -1;
+    if (beforeIndex >= 0) this.layerOrder.splice(beforeIndex, 0, id);
+    else this.layerOrder.push(id);
   }
 
   addImage(id, image, options) {
@@ -113,12 +136,24 @@ class FakeMap {
     this.styles = [...(this.styles ?? []), style];
     this.sources.clear();
     this.layers.clear();
+    this.layerOrder = [];
     this.images.clear();
+    this.globalState.clear();
     this.emit("style.load");
   }
 
   easeTo(options) {
     this.lastEase = options;
+    if (Number.isFinite(options.zoom)) this.zoom = options.zoom;
+  }
+
+  getZoom() {
+    return this.zoom;
+  }
+
+  setGlobalStateProperty(key, value) {
+    this.globalState.set(key, value);
+    this.globalStateChanges = [...(this.globalStateChanges ?? []), [key, value]];
   }
 
   fitBounds(bounds, options) {
@@ -143,7 +178,7 @@ const collection = (...coordinates) => ({
     id: `page:${index}`,
     geometry: { type: "Point", coordinates: [lon, lat] },
     properties: {
-      [FEATURE_PROPERTIES.pageUid]: `p${index}`,
+      [FEATURE_PROPERTIES.entityUid]: `p${index}`,
       [FEATURE_PROPERTIES.label]: `Place ${index}`,
     },
   })),
@@ -184,8 +219,8 @@ test("data refreshes reuse one map and fit handles single and multiple points", 
     originalEvent: { clientX: 212, clientY: 318, shiftKey: true },
   });
   assert.deepEqual(selected[0], {
-    pageUids: ["p0", "p1"],
-    coincidentPageUids: ["p0", "p1"],
+    entityUids: ["p0", "p1"],
+    coincidentEntityUids: ["p0", "p1"],
     point: { x: 12, y: 18 },
     lngLat: { lng: 57.5, lat: -20.16 },
     clientPoint: { x: 212, y: 318 },
@@ -216,8 +251,8 @@ test("overlapping nearby markers select the point nearest the click", () => {
     point: { x: 11, y: 10 },
   });
 
-  assert.deepEqual(selected[0].pageUids, ["p0", "p1"]);
-  assert.deepEqual(selected[0].coincidentPageUids, ["p0"]);
+  assert.deepEqual(selected[0].entityUids, ["p0", "p1"]);
+  assert.deepEqual(selected[0].coincidentEntityUids, ["p0"]);
   runtime.remove();
 });
 
@@ -239,8 +274,8 @@ test("markers at the same visible point remain available in the chooser", () => 
     point: { x: 10, y: 10 },
   });
 
-  assert.deepEqual(selected[0].pageUids, ["p0", "p1"]);
-  assert.deepEqual(selected[0].coincidentPageUids, ["p0", "p1"]);
+  assert.deepEqual(selected[0].entityUids, ["p0", "p1"]);
+  assert.deepEqual(selected[0].coincidentEntityUids, ["p0", "p1"]);
   runtime.remove();
 });
 
@@ -297,8 +332,8 @@ test("native layers share the compiled source and runtime images survive style r
   const data = collection([57.5, -20.16]);
   runtime.setData(data);
   map.emit("click", { features: [data.features[0]] });
-  assert.deepEqual(selected[0].pageUids, ["p0"]);
-  assert.deepEqual(selected[0].coincidentPageUids, ["p0"]);
+  assert.deepEqual(selected[0].entityUids, ["p0"]);
+  assert.deepEqual(selected[0].coincidentEntityUids, ["p0"]);
 
   runtime.setBasemap("satellite");
   assert.ok(map.getLayer("people-portraits"));
@@ -416,5 +451,115 @@ test("named MapTiler basemaps reapply changed keys without exposing them in stat
   });
   assert.doesNotMatch(errors.at(-1).message, /second|private-key/u);
   assert.match(errors.at(-1).message, /key=\[redacted\]/u);
+  runtime.remove();
+});
+
+test("a graph-defined external style URL passes through the catalog and restores the overlay", () => {
+  FakeMap.instances.length = 0;
+  const registry = createBasemapRegistry({
+    settings: {
+      get: () => ({
+        version: BASEMAP_SETTINGS_VERSION,
+        providers: {},
+        basemaps: [
+          {
+            id: "maplibre-demo",
+            name: "MapLibre Demo",
+            kind: CUSTOM_BASEMAP_KINDS.style,
+            url: "https://demotiles.maplibre.org/style.json",
+          },
+        ],
+      }),
+    },
+  });
+  const statuses = [];
+  const runtime = createInlineMapRuntime({
+    container: {},
+    mapLibrary: fakeLibrary,
+    resolveBasemap: (reference) => registry.resolve(reference),
+    onBasemap: (status) => statuses.push(status),
+  });
+  const map = FakeMap.instances[0];
+  map.emit("load");
+  const data = collection([57.5, -20.16]);
+  runtime.setData(data);
+
+  runtime.setBasemap("MapLibre Demo");
+
+  assert.equal(map.lastStyle, "https://demotiles.maplibre.org/style.json");
+  assert.equal(statuses.at(-1).name, "MapLibre Demo");
+  assert.doesNotMatch(JSON.stringify(statuses.at(-1)), /demotiles/u);
+  assert.equal(map.getSource(MAP_SOURCE_ID).data, data);
+  assert.ok(map.getLayer(MAP_LAYER_ID));
+  runtime.remove();
+});
+
+test("focus zooms in to 15, preserves closer zoom, and uses a transient offset", () => {
+  FakeMap.instances.length = 0;
+  const runtime = createInlineMapRuntime({ container: {}, mapLibrary: fakeLibrary });
+  const map = FakeMap.instances[0];
+  map.emit("load");
+
+  map.zoom = 8;
+  runtime.focus([57.5, -20.16], { offset: [140, -15] });
+  assert.deepEqual(map.lastEase, {
+    center: [57.5, -20.16],
+    zoom: 15,
+    offset: [140, -15],
+    duration: 450,
+    essential: false,
+  });
+
+  map.zoom = 17;
+  runtime.focus([57.51, -20.17]);
+  assert.equal(map.lastEase.zoom, 17);
+  assert.deepEqual(map.lastEase.offset, [0, 0]);
+
+  const lastValidCamera = map.lastEase;
+  runtime.focus([Number.NaN, -20.17]);
+  assert.equal(map.lastEase, lastValidCamera);
+  runtime.remove();
+});
+
+test("selection uses global state and keeps the reserved ring above custom layers", () => {
+  FakeMap.instances.length = 0;
+  const runtime = createInlineMapRuntime({ container: {}, mapLibrary: fakeLibrary });
+  const map = FakeMap.instances[0];
+  map.emit("load");
+
+  const ring = map.getLayer(SELECTED_POINT_LAYER_ID);
+  assert.ok(ring);
+  assert.deepEqual(layerTest.validationMessages(ring), []);
+  assert.deepEqual(ring.filter, [
+    "all",
+    ["has", FEATURE_PROPERTIES.entityUid],
+    [
+      "==",
+      ["get", FEATURE_PROPERTIES.entityUid],
+      ["global-state", SELECTED_ENTITY_STATE_KEY],
+    ],
+  ]);
+  assert.equal(map.events.has(`mouseenter:${SELECTED_POINT_LAYER_ID}`), false);
+
+  runtime.setLayers([
+    {
+      id: "custom-markers",
+      type: "circle",
+      source: MAP_SOURCE_ID,
+      paint: { "circle-color": "#ff0000" },
+    },
+  ]);
+  runtime.setSelectedEntityUid("p0");
+  assert.equal(map.globalState.get(SELECTED_ENTITY_STATE_KEY), "p0");
+  assert.equal(map.layerOrder.at(-1), SELECTED_POINT_LAYER_ID);
+
+  runtime.setBasemap("satellite");
+  assert.ok(map.getLayer("custom-markers"));
+  assert.ok(map.getLayer(SELECTED_POINT_LAYER_ID));
+  assert.equal(map.layerOrder.at(-1), SELECTED_POINT_LAYER_ID);
+  assert.equal(map.globalState.get(SELECTED_ENTITY_STATE_KEY), "p0");
+
+  runtime.setSelectedEntityUid(null);
+  assert.equal(map.globalState.get(SELECTED_ENTITY_STATE_KEY), null);
   runtime.remove();
 });

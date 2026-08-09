@@ -1,6 +1,6 @@
 // Owns Roam pull watches for one mounted map. Watch callbacks must be removed
 // with the exact same function object, and only the latest refresh may change the watch set.
-import { PLACE_ENTITY_PATTERN } from "./place-records.js";
+import { LOCATION_ENTITY_PATTERN } from "./place-records.js";
 
 export const MAP_WATCH_PATTERN = `[
   :block/string :block/order
@@ -38,7 +38,7 @@ export function createLiveMapSession({
 
   function watchPattern(kind) {
     if (kind === "map") return MAP_WATCH_PATTERN;
-    if (kind === "place") return PLACE_ENTITY_PATTERN;
+    if (kind === "entity") return LOCATION_ENTITY_PATTERN;
     if (kind === "attribute") return ATTRIBUTE_WATCH_PATTERN;
     return SOURCE_DEPENDENCY_WATCH_PATTERN;
   }
@@ -111,7 +111,10 @@ export function createLiveMapSession({
     if (!isCurrent(expectedGeneration)) return false;
     const desired = new Map();
     for (const item of result.sourceItems ?? []) {
-      desired.set(watchKey("place", item.pageUid), { kind: "place", uid: item.pageUid });
+      desired.set(watchKey("entity", item.entityUid), {
+        kind: "entity",
+        uid: item.entityUid,
+      });
     }
     for (const uid of result.sourceWatchUids ?? []) {
       desired.set(watchKey("source", uid), { kind: "source", uid });

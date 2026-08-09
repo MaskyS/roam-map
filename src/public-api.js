@@ -1,4 +1,4 @@
-export const PUBLIC_API_VERSION = 1;
+export const PUBLIC_API_VERSION = 2;
 export const PUBLIC_API_NAMESPACE = "RoamMap";
 
 export function createPublicApi({
@@ -6,8 +6,17 @@ export function createPublicApi({
   MarkerCardActions,
   MarkerCardDetails,
   MarkerPopover,
+  MapResultsPanel,
+  MapResultItem,
 }) {
-  const components = { MarkerCard, MarkerCardActions, MarkerCardDetails, MarkerPopover };
+  const components = {
+    MarkerCard,
+    MarkerCardActions,
+    MarkerCardDetails,
+    MarkerPopover,
+    MapResultsPanel,
+    MapResultItem,
+  };
   if (Object.values(components).some((component) => typeof component !== "function")) {
     throw new Error("Roam Map's public component API is incomplete.");
   }

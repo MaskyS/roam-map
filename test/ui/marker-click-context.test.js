@@ -8,11 +8,15 @@ import {
   markerClickInvocation,
 } from "../../src/ui/marker-click-context.js";
 
-function feature(pageUid, description = "A place") {
+function feature(entityUid, description = "A place") {
   return {
     type: "Feature",
     geometry: { type: "Point", coordinates: [57, -20] },
-    properties: { "roam/page-uid": pageUid, Description: description },
+    properties: {
+      "roam/entityUid": entityUid,
+      "roam/identityKind": entityUid === "other-uid" ? "block" : "page",
+      Description: description,
+    },
   };
 }
 
@@ -22,7 +26,7 @@ test("marker-click context round-trips a JSON-safe click and all coincident feat
   const context = createMarkerClickContext({
     mapUid: "map-uid",
     clickId: 7,
-    pageUids: ["page-uid", "other-uid"],
+    entityUids: ["page-uid", "other-uid"],
     features: [first, second],
     point: { x: 120, y: 80 },
     lngLat: { lng: 57, lat: -20 },
@@ -33,8 +37,9 @@ test("marker-click context round-trips a JSON-safe click and all coincident feat
   const invocation = markerClickInvocation("marker-click-code", context);
 
   assert.equal(context.version, MARKER_CLICK_CONTEXT_VERSION);
-  assert.equal(context.pageUid, "page-uid");
-  assert.deepEqual(context.coincidentPageUids, ["page-uid", "other-uid"]);
+  assert.equal(context.entityUid, "page-uid");
+  assert.equal(context.identityKind, "page");
+  assert.deepEqual(context.coincidentEntityUids, ["page-uid", "other-uid"]);
   assert.equal(context.feature, first);
   assert.equal("assets" in context, false);
   assert.deepEqual(context.modifiers, {
@@ -55,21 +60,22 @@ test("marker-click context keeps all hits but exposes only selectable marker ide
   const context = createMarkerClickContext({
     mapUid: "map-uid",
     clickId: 1,
-    pageUids: ["page-uid", "other-uid"],
-    coincidentPageUids: ["other-uid", "stale-uid"],
+    entityUids: ["page-uid", "other-uid"],
+    coincidentEntityUids: ["other-uid", "stale-uid"],
     features: [first, second],
   });
 
-  assert.equal(context.pageUid, "other-uid");
+  assert.equal(context.entityUid, "other-uid");
+  assert.equal(context.identityKind, "block");
   assert.equal(context.feature, second);
-  assert.deepEqual(context.pageUids, ["page-uid", "other-uid"]);
-  assert.deepEqual(context.coincidentPageUids, ["other-uid"]);
+  assert.deepEqual(context.entityUids, ["page-uid", "other-uid"]);
+  assert.deepEqual(context.coincidentEntityUids, ["other-uid"]);
 });
 
 test("clickId makes repeated clicks distinct even when they hit the same marker", () => {
   const base = {
     mapUid: "map-uid",
-    pageUids: ["page-uid"],
+    entityUids: ["page-uid"],
     features: [feature("page-uid")],
   };
   const first = markerClickInvocation(

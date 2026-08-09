@@ -1,37 +1,42 @@
 // roam/render arguments must be serializable. This context keeps the useful
 // click data while leaving MapLibre objects and native DOM events behind.
-export const MARKER_CLICK_CONTEXT_VERSION = 1;
+export const MARKER_CLICK_CONTEXT_VERSION = 2;
 
 export function createMarkerClickContext({
   mapUid,
   clickId,
-  pageUids = [],
-  coincidentPageUids = pageUids,
+  entityUids = [],
+  coincidentEntityUids = entityUids,
   features = [],
   point = null,
   lngLat = null,
   clientPoint = null,
   modifiers = {},
 }) {
-  const orderedPageUids = [...pageUids];
+  const orderedEntityUids = [...entityUids];
   const orderedFeatures = [...features];
-  const knownPageUids = new Set(orderedPageUids);
-  const orderedCoincidentPageUids = [
-    ...new Set(coincidentPageUids.filter((pageUid) => knownPageUids.has(pageUid))),
+  const knownEntityUids = new Set(orderedEntityUids);
+  const orderedCoincidentEntityUids = [
+    ...new Set(
+      coincidentEntityUids.filter((entityUid) => knownEntityUids.has(entityUid)),
+    ),
   ];
-  if (orderedCoincidentPageUids.length === 0 && orderedPageUids[0]) {
-    orderedCoincidentPageUids.push(orderedPageUids[0]);
+  if (orderedCoincidentEntityUids.length === 0 && orderedEntityUids[0]) {
+    orderedCoincidentEntityUids.push(orderedEntityUids[0]);
   }
-  const primaryPageUid = orderedCoincidentPageUids[0] ?? null;
-  const primaryFeatureIndex = orderedPageUids.indexOf(primaryPageUid);
+  const primaryEntityUid = orderedCoincidentEntityUids[0] ?? null;
+  const primaryFeatureIndex = orderedEntityUids.indexOf(primaryEntityUid);
+  const primaryFeature = orderedFeatures[primaryFeatureIndex] ?? orderedFeatures[0] ?? null;
   return {
     version: MARKER_CLICK_CONTEXT_VERSION,
     mapUid,
     clickId,
-    pageUid: primaryPageUid,
-    pageUids: orderedPageUids,
-    coincidentPageUids: orderedCoincidentPageUids,
-    feature: orderedFeatures[primaryFeatureIndex] ?? orderedFeatures[0] ?? null,
+    trigger: "marker",
+    entityUid: primaryEntityUid,
+    identityKind: primaryFeature?.properties?.["roam/identityKind"] ?? null,
+    entityUids: orderedEntityUids,
+    coincidentEntityUids: orderedCoincidentEntityUids,
+    feature: primaryFeature,
     features: orderedFeatures,
     point,
     lngLat,

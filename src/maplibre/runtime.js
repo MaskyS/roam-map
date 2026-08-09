@@ -15,6 +15,9 @@ import {
   DEFAULT_MARKER_RADIUS,
   DEFAULT_POINT_LAYER_ID,
   MAP_SOURCE_ID,
+  SELECTED_ENTITY_STATE_KEY,
+  SELECTED_POINT_LAYER_ID,
+  SELECTED_POINT_ZOOM_FLOOR,
 } from "./runtime-constants.js";
 import { FEATURE_PROPERTIES } from "../map/feature-properties.js";
 import { DEFAULT_MAP_OPTIONS } from "../map/options.js";
@@ -53,6 +56,18 @@ function markerRadiusExpression() {
   ];
 }
 
+function selectedPointRadiusExpression() {
+  return [
+    "interpolate",
+    ["linear"],
+    ["zoom"],
+    2,
+    DEFAULT_MARKER_RADIUS * 0.65 + 5,
+    12,
+    DEFAULT_MARKER_RADIUS + 5,
+  ];
+}
+
 function pointCoordinates(collection) {
   return (collection?.features ?? [])
     .filter((feature) => feature?.geometry?.type === "Point")
@@ -75,20 +90,20 @@ function finitePoint(value, first, second) {
     : null;
 }
 
-function pageUidFromFeature(feature) {
-  return feature?.properties?.[FEATURE_PROPERTIES.pageUid] ?? null;
+function entityUidFromFeature(feature) {
+  return feature?.properties?.[FEATURE_PROPERTIES.entityUid] ?? null;
 }
 
-function distinctPageUids(features) {
-  const pageUids = [];
+function distinctEntityUids(features) {
+  const entityUids = [];
   const seen = new Set();
   for (const feature of features) {
-    const pageUid = pageUidFromFeature(feature);
-    if (!pageUid || seen.has(pageUid)) continue;
-    seen.add(pageUid);
-    pageUids.push(pageUid);
+    const entityUid = entityUidFromFeature(feature);
+    if (!entityUid || seen.has(entityUid)) continue;
+    seen.add(entityUid);
+    entityUids.push(entityUid);
   }
-  return pageUids;
+  return entityUids;
 }
 
 function distanceSquared(first, second) {
@@ -96,21 +111,21 @@ function distanceSquared(first, second) {
 }
 
 function markerHitSelection({ renderedFeatures, collection, map, clickPoint }) {
-  const renderedPageUids = distinctPageUids(renderedFeatures);
+  const renderedEntityUids = distinctEntityUids(renderedFeatures);
   const fallbackHitSelection = {
-    pageUids: renderedPageUids,
-    coincidentPageUids: renderedPageUids,
+    entityUids: renderedEntityUids,
+    coincidentEntityUids: renderedEntityUids,
   };
   const point = finitePoint(clickPoint, "x", "y");
   if (!point || typeof map.project !== "function") return fallbackHitSelection;
 
   const sourceFeatures = new Map(
     (collection?.features ?? [])
-      .map((feature) => [pageUidFromFeature(feature), feature])
-      .filter(([pageUid]) => pageUid),
+      .map((feature) => [entityUidFromFeature(feature), feature])
+      .filter(([entityUid]) => entityUid),
   );
-  const projectedHits = renderedPageUids.map((pageUid, index) => {
-    const geometry = sourceFeatures.get(pageUid)?.geometry;
+  const projectedHits = renderedEntityUids.map((entityUid, index) => {
+    const geometry = sourceFeatures.get(entityUid)?.geometry;
     const coordinates = geometry?.coordinates;
     if (
       geometry?.type !== "Point" ||
@@ -124,7 +139,7 @@ function markerHitSelection({ renderedFeatures, collection, map, clickPoint }) {
       const projectedPoint = finitePoint(map.project(coordinates), "x", "y");
       return projectedPoint
         ? {
-            pageUid,
+            entityUid,
             projectedPoint,
             distanceFromClick: distanceSquared(projectedPoint, point),
             renderedOrder: index,
@@ -147,19 +162,19 @@ function markerHitSelection({ renderedFeatures, collection, map, clickPoint }) {
   const primaryPoint = projectedHits[0]?.projectedPoint;
   const toleranceSquared = COINCIDENT_MARKER_TOLERANCE_PX ** 2;
   return {
-    pageUids: projectedHits.map(({ pageUid }) => pageUid),
-    coincidentPageUids: primaryPoint
+    entityUids: projectedHits.map(({ entityUid }) => entityUid),
+    coincidentEntityUids: primaryPoint
       ? projectedHits
           .filter(
             ({ projectedPoint }) =>
               distanceSquared(projectedPoint, primaryPoint) <= toleranceSquared,
           )
-          .map(({ pageUid }) => pageUid)
+          .map(({ entityUid }) => entityUid)
       : [],
   };
 }
 
-function markerClickEvent(event, map, { pageUids, coincidentPageUids }) {
+function markerClickEvent(event, map, { entityUids, coincidentEntityUids }) {
   const point = finitePoint(event?.point, "x", "y");
   const lngLat = finitePoint(event?.lngLat, "lng", "lat");
   const originalEvent = event?.originalEvent;
@@ -174,8 +189,8 @@ function markerClickEvent(event, map, { pageUids, coincidentPageUids }) {
     }
   }
   return {
-    pageUids,
-    coincidentPageUids,
+    entityUids,
+    coincidentEntityUids,
     point,
     lngLat,
     clientPoint,
@@ -205,6 +220,7 @@ export function createInlineMapRuntime({
   let loaded = false;
   let currentData = EMPTY_COLLECTION;
   let currentLayers = [];
+  let selectedEntityUid = null;
   let currentBasemap = resolveBasemap(normalizedBasemap(basemap));
   let fitWhenLoaded = false;
   let assetGeneration = 0;
@@ -232,6 +248,25 @@ export function createInlineMapRuntime({
   map.dragRotate?.disable?.();
   map.touchZoomRotate?.disableRotation?.();
 
+  let attributionCollapsed = false;
+  // MapLibre expands the compact attribution as soon as the first style's
+  // credits arrive. Collapse it to the ⓘ toggle by mirroring the collapsed
+  // state of AttributionControl._toggleAttribution; the control keeps working
+  // normally afterward. Runs on "idle" until the control has settled into its
+  // compact form, then unsubscribes.
+  function collapseAttribution() {
+    if (attributionCollapsed || removed) return;
+    const attribution = container?.querySelector?.(
+      ".maplibregl-ctrl-attrib.maplibregl-compact",
+    );
+    if (!attribution) return;
+    attribution.classList.remove("maplibregl-compact-show");
+    attribution.setAttribute("open", "");
+    attributionCollapsed = true;
+    map.off("idle", collapseAttribution);
+  }
+  map.on("idle", collapseAttribution);
+
   function markerLayer() {
     return {
       id: MAP_LAYER_ID,
@@ -243,6 +278,30 @@ export function createInlineMapRuntime({
         "circle-stroke-color": "#ffffff",
         "circle-stroke-width": 2,
         "circle-opacity": 0.92,
+      },
+    };
+  }
+
+  function selectedPointLayer() {
+    return {
+      id: SELECTED_POINT_LAYER_ID,
+      type: "circle",
+      source: MAP_SOURCE_ID,
+      filter: [
+        "all",
+        ["has", FEATURE_PROPERTIES.entityUid],
+        [
+          "==",
+          ["get", FEATURE_PROPERTIES.entityUid],
+          ["global-state", SELECTED_ENTITY_STATE_KEY],
+        ],
+      ],
+      paint: {
+        "circle-radius": selectedPointRadiusExpression(),
+        "circle-color": "rgba(19, 124, 189, 0)",
+        "circle-stroke-color": DEFAULT_MARKER_COLOR,
+        "circle-stroke-opacity": 0.72,
+        "circle-stroke-width": 3,
       },
     };
   }
@@ -300,7 +359,7 @@ export function createInlineMapRuntime({
       map,
       clickPoint: event?.point,
     });
-    if (markerHits.pageUids.length > 0) {
+    if (markerHits.entityUids.length > 0) {
       onMarkerClick?.(markerClickEvent(event, map, markerHits));
     }
   }
@@ -337,6 +396,11 @@ export function createInlineMapRuntime({
     for (const layerId of desired) addLayerInteractions(layerId);
   }
 
+  function applySelectedEntityState() {
+    if (!loaded || typeof map.setGlobalStateProperty !== "function") return;
+    map.setGlobalStateProperty(SELECTED_ENTITY_STATE_KEY, selectedEntityUid);
+  }
+
   function ensureOverlay() {
     if (removed) return;
     try {
@@ -348,6 +412,9 @@ export function createInlineMapRuntime({
       for (const layer of currentLayers) {
         if (!map.getLayer(layer.id)) map.addLayer(copyLayer(layer));
       }
+      applySelectedEntityState();
+      if (!map.getLayer(SELECTED_POINT_LAYER_ID)) map.addLayer(selectedPointLayer());
+      map.moveLayer?.(SELECTED_POINT_LAYER_ID);
       syncLayerInteractions();
     } catch (error) {
       onError?.(safeBasemapError(error));
@@ -377,6 +444,7 @@ export function createInlineMapRuntime({
     if (removed) return;
     loaded = true;
     ensureOverlay();
+    collapseAttribution();
     if (fitWhenLoaded) {
       fitWhenLoaded = false;
       fit(currentData, { animate: false });
@@ -388,6 +456,7 @@ export function createInlineMapRuntime({
     if (removed) return;
     loaded = true;
     ensureOverlay();
+    collapseAttribution();
     onLoad?.();
   }
 
@@ -503,6 +572,49 @@ export function createInlineMapRuntime({
       return status;
     },
     fit,
+    // Focus is deliberately transient: it never changes the saved map options.
+    // MapLibre handles reduced-motion preferences as long as the animation is
+    // not marked essential.
+    focus(
+      coordinates,
+      { duration = 450, minZoom = SELECTED_POINT_ZOOM_FLOOR, offset = [0, 0] } = {},
+    ) {
+      if (
+        removed ||
+        !Array.isArray(coordinates) ||
+        !Number.isFinite(coordinates[0]) ||
+        !Number.isFinite(coordinates[1])
+      ) {
+        return;
+      }
+      const currentZoom = map.getZoom?.();
+      const zoomFloor = Number.isFinite(minZoom)
+        ? minZoom
+        : SELECTED_POINT_ZOOM_FLOOR;
+      const zoom = Number.isFinite(currentZoom)
+        ? Math.max(currentZoom, zoomFloor)
+        : zoomFloor;
+      const normalizedOffset =
+        Array.isArray(offset) &&
+        Number.isFinite(offset[0]) &&
+        Number.isFinite(offset[1])
+          ? [offset[0], offset[1]]
+          : [0, 0];
+      const camera = {
+        center: coordinates,
+        zoom,
+        offset: normalizedOffset,
+        duration,
+        essential: false,
+      };
+      if (typeof map.easeTo === "function") map.easeTo(camera);
+      else map.jumpTo?.({ center: coordinates, zoom });
+    },
+    setSelectedEntityUid(entityUid) {
+      if (removed) return;
+      selectedEntityUid = typeof entityUid === "string" && entityUid ? entityUid : null;
+      applySelectedEntityState();
+    },
     resize() {
       if (!removed) map.resize?.();
     },
@@ -512,6 +624,7 @@ export function createInlineMapRuntime({
       assetGeneration += 1;
       assetAbortController?.abort();
       for (const layerId of [...interactiveLayerIds]) removeLayerInteractions(layerId);
+      map.off("idle", collapseAttribution);
       map.off("load", handleLoad);
       map.off("style.load", handleStyleLoad);
       map.off("error", handleError);

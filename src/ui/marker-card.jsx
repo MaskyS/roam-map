@@ -7,21 +7,21 @@ function readableError(error) {
   return error?.message ?? String(error ?? "Unknown error");
 }
 
-function defaultOpenPageInSidebar(pageUid) {
+function defaultOpenEntityInSidebar(entityUid) {
   const sidebar = window.roamAlphaAPI?.ui?.rightSidebar;
   if (typeof sidebar?.addWindow !== "function") {
     return Promise.reject(new Error("Roam's right-sidebar API is unavailable."));
   }
   return Promise.resolve(
-    sidebar.addWindow({ window: { type: "outline", "block-uid": pageUid } }),
+    sidebar.addWindow({ window: { type: "outline", "block-uid": entityUid } }),
   );
 }
 
-function featureByPageUid(context) {
+function featureByEntityUid(context) {
   return new Map(
     (context?.features ?? [])
-      .map((feature) => [feature?.properties?.[FEATURE_PROPERTIES.pageUid], feature])
-      .filter(([pageUid]) => pageUid),
+      .map((feature) => [feature?.properties?.[FEATURE_PROPERTIES.entityUid], feature])
+      .filter(([entityUid]) => entityUid),
   );
 }
 
@@ -66,42 +66,42 @@ export function MarkerCard({
   children = null,
   className = "",
   style = null,
-  initialPageUid = context?.pageUid ?? null,
-  onPageChange = null,
+  initialEntityUid = context?.entityUid ?? null,
+  onEntityChange = null,
   onClose = null,
-  openPageInSidebar = defaultOpenPageInSidebar,
+  openEntityInSidebar = defaultOpenEntityInSidebar,
   showCloseButton = true,
-  showPageSelector = true,
+  showEntitySelector = true,
   ...cardProps
 }) {
-  const pageUids = context?.pageUids ?? [];
-  const coincidentPageUids = context?.coincidentPageUids ?? pageUids;
-  const features = featureByPageUid(context);
-  const [selectedPageUid, setSelectedPageUid] = React.useState(initialPageUid);
+  const entityUids = context?.entityUids ?? [];
+  const coincidentEntityUids = context?.coincidentEntityUids ?? entityUids;
+  const features = featureByEntityUid(context);
+  const [selectedEntityUid, setSelectedEntityUid] = React.useState(initialEntityUid);
   const [visible, setVisible] = React.useState(true);
   const [actionError, setActionError] = React.useState(null);
-  const activePageUid = coincidentPageUids.includes(selectedPageUid)
-    ? selectedPageUid
-    : coincidentPageUids[0] ?? null;
-  const feature = features.get(activePageUid) ?? context?.feature ?? null;
+  const activeEntityUid = coincidentEntityUids.includes(selectedEntityUid)
+    ? selectedEntityUid
+    : coincidentEntityUids[0] ?? null;
+  const feature = features.get(activeEntityUid) ?? context?.feature ?? null;
   const properties = feature?.properties ?? null;
 
-  if (!visible || !activePageUid || !properties) return null;
+  if (!visible || !activeEntityUid || !properties) return null;
 
   function close() {
     if (typeof onClose === "function") onClose();
     else setVisible(false);
   }
 
-  function selectPage(pageUid) {
-    setSelectedPageUid(pageUid);
-    onPageChange?.({ pageUid, feature: features.get(pageUid) ?? null });
+  function selectEntity(entityUid) {
+    setSelectedEntityUid(entityUid);
+    onEntityChange?.({ entityUid, feature: features.get(entityUid) ?? null });
   }
 
   function openInSidebar() {
     setActionError(null);
     return Promise.resolve()
-      .then(() => openPageInSidebar(activePageUid))
+      .then(() => openEntityInSidebar(activeEntityUid))
       .then(() => true)
       .catch((error) => {
         setActionError(error);
@@ -111,9 +111,10 @@ export function MarkerCard({
 
   const card = {
     context,
-    pageUid: activePageUid,
-    pageUids,
-    coincidentPageUids,
+    entityUid: activeEntityUid,
+    identityKind: properties[FEATURE_PROPERTIES.identityKind] ?? null,
+    entityUids,
+    coincidentEntityUids,
     feature,
     features: context?.features ?? [],
     close,
@@ -135,12 +136,12 @@ export function MarkerCard({
     ) : (
       children
     );
-  const canChoosePage = showPageSelector && coincidentPageUids.length > 1;
+  const canChooseEntity = showEntitySelector && coincidentEntityUids.length > 1;
   const closeButton = showCloseButton ? (
     <Button
       className={[
         "rrm-selection-close",
-        canChoosePage ? "" : "rrm-selection-close--floating",
+        canChooseEntity ? "" : "rrm-selection-close--floating",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -157,7 +158,7 @@ export function MarkerCard({
       {...cardProps}
       className={[
         "rrm-selection",
-        showCloseButton && !canChoosePage ? "rrm-selection--floating-close" : "",
+        showCloseButton && !canChooseEntity ? "rrm-selection--floating-close" : "",
         className,
       ]
         .filter(Boolean)
@@ -168,19 +169,19 @@ export function MarkerCard({
       aria-label={cardProps["aria-label"] ?? `${label} map marker`}
       aria-live={cardProps["aria-live"] ?? "polite"}
     >
-      {canChoosePage ? (
+      {canChooseEntity ? (
         <div className="rrm-marker-card-controls">
           <HTMLSelect
-            className="rrm-marker-page-select"
+            className="rrm-marker-entity-select"
             aria-label="Selected place"
             fill
-            value={activePageUid}
-            onChange={(event) => selectPage(event.target.value)}
+            value={activeEntityUid}
+            onChange={(event) => selectEntity(event.target.value)}
           >
-            {coincidentPageUids.map((pageUid) => {
-              const option = features.get(pageUid)?.properties ?? {};
+            {coincidentEntityUids.map((entityUid) => {
+              const option = features.get(entityUid)?.properties ?? {};
               return (
-                <option key={pageUid} value={pageUid}>
+                <option key={entityUid} value={entityUid}>
                   {option[FEATURE_PROPERTIES.label] ??
                     option[FEATURE_PROPERTIES.title] ??
                     "Place"}
@@ -198,4 +199,4 @@ export function MarkerCard({
   );
 }
 
-export const __test = { defaultOpenPageInSidebar, featureByPageUid };
+export const __test = { defaultOpenEntityInSidebar, featureByEntityUid };

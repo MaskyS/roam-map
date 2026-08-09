@@ -38,20 +38,20 @@ The source tree follows the same boundaries without introducing a framework:
 | `src/map/` | Definition parsing, source contributions, option/layer compilation, place records, and one live session per visible map |
 | `src/maplibre/` | The only owner of MapLibre objects, style replacement, renderer assets, and map event handlers |
 | `src/settings/` | Basemap catalog, provider-backed settings, and the settings panel |
-| `src/ui/` | React view, error boundary, and the isolated inline-mount DOM seam |
+| `src/ui/` | React view, accessible resize interaction, error boundary, and the isolated inline-mount DOM seam |
 
 Tests mirror those folders under `test/`, so a module and its contract are easy
 to find together.
 
-Resolvers are selected by input kind. The page resolver deduplicates
-page-backed places by page UID while preserving source provenance and group
-membership. Map-local and external features use explicit source-derived IDs.
+Location requests carry `page` or `block` identity. The resolver deduplicates
+by identity kind and stable UID while preserving source provenance. External
+features must use explicit source-derived IDs.
 
 ## Resolving feature data and presentation
 
 Roam attribute projection and MapLibre presentation are separate concerns.
-Page attributes become ordinary feature properties keyed by the readable
-attribute page title, such as `Profile Picture`. The compiler resolves and
+Page and block attributes become ordinary feature properties keyed by the
+readable attribute page title, such as `Profile Picture`. The compiler resolves and
 retains the attribute page UID internally for HARC reads, compatibility reads,
 watches, and provenance. Users should not need to discover or author that UID.
 
@@ -93,8 +93,8 @@ comes from the layer type and its size comes from `circle-radius`. A symbol
 layer uses `icon-image` and `icon-size`; the latter is a scale factor, not a
 pixel radius.
 
-The initial projection experiment should expose suitable scalar page
-attributes as flat, title-keyed feature properties and reserve `roam/` for
+The current projection exposes suitable scalar source attributes as flat,
+title-keyed feature properties and reserves `roam/` for
 compiler-owned fields. Static expression analysis may add missing-property and
 type diagnostics. Selective projection should be introduced only if live
 measurements show that broad scalar projection is too large or invalidates too
@@ -119,7 +119,7 @@ Marker interaction is a separate surface. The MapLibre style specification
 does not declare click handlers or popup DOM, so Roam Map accepts one direct
 `Marker click` resource containing JavaScript, JSX, Clojure, or a block
 reference to reusable `roam/render` code. It receives a versioned,
-JSON-serializable click snapshot identifying the clicked pages and features,
+JSON-serializable click snapshot identifying the clicked entities and features,
 geographic and pixel positions, and modifier keys. Code can render any UI, run
 an effect and return nothing, or read more graph data through the Alpha API.
 This is an explicit arbitrary-code boundary owned by the graph author, not a
@@ -128,7 +128,7 @@ extension.
 
 Overlapping point hit areas are not the same as coincident markers. The adapter
 ranks point hits by distance from the click, while retaining every rendered hit
-for user code. The stock card offers a chooser only when multiple page markers
+for user code. The stock card offers a chooser only when multiple entity markers
 project to the same visible point; clicking one of two nearby markers opens the
 nearest one directly.
 
@@ -140,25 +140,26 @@ component-registration API. Roam owns each nested custom-component mount
 through its documented `renderString` and `unmountNode` APIs. Repeated clicks
 receive distinct IDs, overlapping MapLibre layers produce one event, and the
 extension unmounts the previous component on replacement or teardown. Opening
-a page uses the documented right-sidebar API.
+a page or block uses the documented right-sidebar outline API.
 
 See [PRESENTATION.md](./PRESENTATION.md) for the complete walkthrough, exact
 MapLibre and Roam references, expression edge cases, and the verification
 contract.
 
-## Proposed source forms
+## Source forms
 
-| Form | Meaning |
-|---|---|
-| Page references | Explicit place pages |
-| `geo:` URI or attributed point block | Map-local coordinates without a page |
-| Block reference | Reusable source outline, expanded with cycle detection |
-| Inline native query | `roamAlphaAPI.data.roamQuery({query})` |
-| Child native query | `roamAlphaAPI.data.roamQuery({uid})` |
-| Search component | `roamAlphaAPI.data.async.search(...)` |
-| `:q` block | Datalog with an explicit UID-producing result contract |
-| GeoJSON code block | Validated external features with source-derived identity |
-| `{{map: all}}` | Explicitly load the graph's known places |
+| Form | Status | Meaning |
+|---|---|---|
+| Page references | Implemented | Explicit page-backed locations |
+| Bare `geo:` URI | Implemented | An unnamed point whose source block is its identity |
+| Named block with `Coordinates:: geo:…` | Implemented | A named point whose parent block is its identity |
+| Block reference | Proposed | Reusable source outline, expanded with cycle detection |
+| Inline native query | Proposed | `roamAlphaAPI.data.roamQuery({query})` |
+| Child native query | Proposed | `roamAlphaAPI.data.roamQuery({uid})` |
+| Search component | Proposed | `roamAlphaAPI.data.async.search(...)` |
+| `:q` block | Proposed | Datalog with an explicit UID-producing result contract |
+| GeoJSON code block | Proposed | Validated external features with source-derived identity |
+| `{{map: all}}` | Proposed | Explicitly load the graph's known locations |
 
 Plain parent blocks with recognized source descendants can become named map
 layers. One page may belong to multiple layers without producing duplicate
@@ -186,7 +187,8 @@ boundary should accept geometry from the beginning:
 ```js
 {
   id,
-  pageUid: optionalPageUid,
+  entityUid,
+  identityKind,
   title,
   geometry,
   address,
@@ -203,7 +205,7 @@ sources may remain native resources rather than being forced into GeoJSON.
 
 - Mount and load on first render.
 - Watch the map block's source subtree for definition changes.
-- Watch currently resolved place pages for location changes.
+- Watch currently resolved page and block entities for location changes.
 - Rerun sources when their definitions change.
 - Give query, search, and Datalog sources an explicit refresh action.
 - Do not rerun every expensive query after every unrelated graph edit.
@@ -212,9 +214,10 @@ The current ownership split keeps mutable state close to the system that owns
 it. `src/map/live-session.js` owns compilation generations and exact pull-watch
 registrations. `src/maplibre/runtime.js` owns MapLibre's mutable state. The React
 view owns only user-visible UI state; it derives selected-feature and basemap
-preview values during render and subscribes to the basemap registry with
-`useSyncExternalStore`. There is no generic application-state or cleanup
-registry.
+preview values during render, keeps resize previews local until the gesture
+ends, and subscribes to the basemap registry with `useSyncExternalStore`.
+Durable size is one readable `map/size` child in Roam, not another client-side
+state store. There is no generic application-state or cleanup registry.
 
 The first milestone should prove the direct-reference loop before adding every
 source adapter.
@@ -235,7 +238,7 @@ remain provisional rather than a settled registration contract.
 The contained DOM observer is only a mounting signal. It scans newly added
 subtrees, then sweeps disconnected mounts; it does not rescan the whole document
 for every mutation. Block
-UIDs, source definitions, query results, and place data must be read through the
+UIDs, source definitions, query results, and location data must be read through the
 Roam Alpha API. Each visible render is its own instance because one block can
 appear in the main window, sidebar, embeds, and block references simultaneously.
 The live test confirmed separate main-window and sidebar nodes. In a block
@@ -253,10 +256,10 @@ and block-reference occurrences on one page.
 The initial map should make the source pipeline legible:
 
 - mapped count;
-- skipped pages without location;
+- unmapped sources without valid locations;
 - source failures and truncation;
 - refresh and fit controls;
-- marker-to-page navigation; and
+- marker-to-page-or-block navigation; and
 - stable viewport after the user starts navigating.
 
 Later, the inline map can offer a maximized main-window view registered through

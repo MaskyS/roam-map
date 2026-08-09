@@ -14,6 +14,7 @@ import {
   MarkerCardDetails,
 } from "./ui/marker-card.jsx";
 import { MarkerPopover } from "./ui/marker-popover.jsx";
+import { MapResultItem, MapResultsPanel } from "./ui/results-list.jsx";
 import { MapView } from "./ui/map-view.jsx";
 import { createMapMountLifecycle } from "./ui/mount-maps.js";
 
@@ -102,6 +103,8 @@ async function onload({ extensionAPI }) {
         MarkerCardActions,
         MarkerCardDetails,
         MarkerPopover,
+        MapResultsPanel,
+        MapResultItem,
       }),
     });
     await createBasemapSettingsPanel({ extensionAPI, registry: basemaps });
