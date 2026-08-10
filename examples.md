@@ -51,6 +51,8 @@ Located Efforts:
 The adjacent map independently executes that saved query by block UID and maps
 the containing Effort pages. It does not read the rendered result DOM.
 
+![A native Roam query supplying located Effort pages to a map and synchronized results panel](https://raw.githubusercontent.com/MaskyS/roam-map/main/assets/roam-map-query-input.webp)
+
 Located People:
 
 ````text
