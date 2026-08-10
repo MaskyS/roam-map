@@ -8,6 +8,11 @@ entity.
 
 ![A Roam Map showing five places, its toolbar, a marker card, and the source outline](https://raw.githubusercontent.com/MaskyS/roam-map/main/assets/roam-map-basic-example.webp)
 
+Need to find or create location pages while you write? [Roam Places](https://github.com/MaskyS/roam-places)
+searches your graph and online place services, then saves the location data
+Roam Map reads. Roam Places handles location capture; Roam Map handles
+aggregation and persistent map rendering.
+
 ## Quick start
 
 Create or reuse pages with a WGS84 `Coordinates` attribute. Roam Places can
