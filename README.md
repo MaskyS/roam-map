@@ -6,6 +6,8 @@ beneath `{{map}}`; Roam Map resolves stable page and block UIDs, keeps known
 locations current as the graph changes, and lets you return to the underlying
 entity.
 
+![A Roam Map showing five places, its toolbar, a marker card, and the source outline](https://raw.githubusercontent.com/MaskyS/roam-map/main/assets/roam-map-basic-example.webp)
+
 ## Quick start
 
 Create or reuse pages with a WGS84 `Coordinates` attribute. Roam Places can
@@ -62,6 +64,8 @@ The complete working recipes—including circular image markers, native
 MapLibre layers, a reusable JSX marker popup with image, description, and
 website data, a real external style URL, and a saved satellite context map—are
 in:
+
+![A People map using profile-picture markers and graph-authored MapLibre layers](https://raw.githubusercontent.com/MaskyS/roam-map/main/assets/roam-map-people-layers.webp)
 
 **[Open the tested Roam Map examples →](https://github.com/MaskyS/roam-map/blob/main/examples.md)**
 
