@@ -1,226 +1,138 @@
 # Roam Map
 
-Roam Map turns ordinary Roam outlines into live, persistent maps. Add location
-pages, coordinate blocks, a saved native query, or a fenced Datalog query
-beneath `{{map}}`; Roam Map resolves stable page and block UIDs, keeps known
-locations current as the graph changes, and lets you return to the underlying
-entity.
+Roam Map turns location pages and blocks into live maps inside Roam. Choose
+places directly, collect them with a native query, or return exact page and
+block UIDs with Datalog. The map stays connected to its Roam sources and opens
+them in the right sidebar when you need the underlying notes.
 
 ![A Roam Map showing five places, its toolbar, a marker card, and the source outline](https://raw.githubusercontent.com/MaskyS/roam-map/main/assets/roam-map-basic-example.webp)
 
-Need to find or create location pages while you write? [Roam Places](https://github.com/MaskyS/roam-places)
+Need to find or create location pages first? [Roam Places](https://github.com/MaskyS/roam-places)
 searches your graph and online place services, then saves the location data
 Roam Map reads. Roam Places handles location capture; Roam Map handles
 aggregation and persistent map rendering.
 
-## Quick start
+## Create your first map
 
-Create or reuse pages with a WGS84 `Coordinates` attribute. Roam Places can
-capture it for you:
+1. Give each place page a `Coordinates` attribute. Roam Places can do this for
+   you, or you can add one directly:
 
-```text
-roam/meta::
-  Coordinates:: geo:-20.1609,57.5012
-```
+   ```text
+   roam/meta::
+     Coordinates:: geo:-20.1609,57.5012
+   ```
 
-Then add a map to any outline:
+2. Type `/map` and choose **Map (Roam Map)**, or type `{{map}}` in a block.
+
+3. Add each place reference in its own descendant block:
+
+   ```text
+   {{map}}
+     [[Port Louis]]
+     [[Curepipe]]
+   ```
+
+Parent blocks can group places. Roam Map follows outline order, removes
+duplicates, and updates when known sources or their location details change.
+
+## Choose what appears
+
+A map can read:
+
+- location page references;
+- a bare `geo:latitude,longitude` block;
+- a named block with a `Coordinates` child;
+- a native Roam query placed directly beneath the map; or
+- a fenced Datalog query placed directly beneath the map that returns page or
+  block UIDs.
+
+For example, a native query can keep a map tied to changing graph content:
 
 ```text
 {{map}}
-  [[Port Louis]]
-  [[Curepipe]]
+  {{[[query]]: {and: [[Efforts]] {search: roam/meta::}}}}
 ```
 
-Put each place reference in its own descendant block. Parent blocks may group
-places. A map may also contain block-backed points:
+Native-query block results map through their containing page. Use Datalog when
+you need to select exact location pages or block-backed points. Press
+**Refresh** when an unrelated page may have started or stopped matching a
+dynamic query.
 
-```text
-{{map}}
-  geo:-20.1609,57.5012;u=14.4
-  Curepipe meeting point
-    Coordinates:: geo:-20.3163,57.5251
-```
+See the [tested query and Datalog examples](https://github.com/MaskyS/roam-map/blob/main/examples.md#native-query-and-datalog-source-maps)
+for copyable patterns, including relationship-aware maps.
 
-Roam Map walks the outline in order and deduplicates repeated sources by their
-stable page or block UID.
+## Use the map
 
-For dynamic membership, a direct-child native `{{query}}` keeps returned pages
-as pages and maps each returned block through its containing page. A direct-child
-`clojure`, `clj`, `datalog`, `datascript`, or `commonlisp` code block can instead
-run Datalog that returns an exact flat UID collection or one-column UID relation.
-The live Efforts fixture uses a native query; the People and relationship-aware
-San Francisco fixtures use Datalog. Use **Refresh** when a previously unrelated
-entity becomes a new match.
+- Click the place count to open a text-first results list. Selecting a row
+  highlights and focuses its point; **Open in sidebar** returns to its source.
+- Use **Fit** to frame the current places and **Refresh** to rerun all sources.
+- Use the basemap menu to preview another style. Add a child such as
+  `map/basemap:: OpenFreeMap Dark` when the choice should be saved with the map.
+- Hover near the bottom-right corner and drag the resize grip. Roam Map saves
+  the result in one readable `map/size` child; **Reset map size** restores the
+  responsive default.
+- Click a marker for its label, address, overlapping places, and source action.
 
-The map provides:
-
-- mapped, unmapped, and source counts, with a results list whose rows highlight
-  and focus places without opening marker actions;
-- live updates when sources, locations, or presentation attributes change;
-- explicit **Refresh** and **Fit** controls;
-- a corner resize grip that saves one readable, responsive map size;
-- named basemap previews without silently saving view state;
-- marker cards that open source pages or blocks in Roam's right sidebar; and
-- local diagnostics when an input cannot be mapped.
-
-## Tested examples
-
-The complete working recipes—including circular image markers, native
-MapLibre layers, a reusable JSX marker popup with image, description, and
-website data, a real external style URL, and a saved satellite context map—are
-in:
-
-![A People map using profile-picture markers and graph-authored MapLibre layers](https://raw.githubusercontent.com/MaskyS/roam-map/main/assets/roam-map-people-layers.webp)
-
-**[Open the tested Roam Map examples →](https://github.com/MaskyS/roam-map/blob/main/examples.md)**
-
-**[Read the complete customization reference →](https://github.com/MaskyS/roam-map/blob/main/customization.md)**
-
-The examples are kept outside this README so the description remains readable
-inside **Settings → Roam Depot → Roam Map**.
+Map movement is intentionally temporary. Roam Map does not save pan, zoom,
+bearing, or pitch.
 
 ## Location data
 
-Roam Map reads page- and block-backed locations without rewriting them. It
-supports Roam's current attribute representation and its compatibility
-representation, including attributes beneath an exact `roam/meta::` block.
+`Coordinates` uses a plain two-dimensional WGS84 `geo:` URI with latitude
+first and longitude second. An optional `u` parameter records uncertainty in
+metres. Roam Map can also render a GeoJSON Point from `Geometry`; lines,
+polygons, and other non-point geometry are reported rather than drawn as
+markers.
 
-Recognized location fields are:
-
-- `Coordinates`
-- `Geometry`
-- `Address`
-- `Geocoder ID`
-
-`Coordinates` must be a plain two-dimensional WGS84 `geo:` URI with latitude
-first and longitude second. The optional `u` parameter records uncertainty in
-metres. A valid value—including zero—renders as a point. The current renderer
-intentionally reports non-point GeoJSON rather than pretending to draw it as a
-marker.
+`Address` and `Geocoder ID` add useful place details. Other scalar attributes
+can drive advanced MapLibre styling. Roam Map reads both current Roam
+attributes and compatibility `Attribute:: value` blocks, including attributes
+beneath an exact `roam/meta::` child. Rendering never rewrites a source block
+or location page.
 
 ## Basemaps
 
-OpenFreeMap Liberty is the default. The built-in keyless catalog also includes
-OpenFreeMap Positron, Bright, Dark, and Fiord, plus `EOX Satellite Context`—a
-2016 global Sentinel-2 context mosaic rather than current high-resolution
-imagery.
+OpenFreeMap Liberty is the default. Keyless alternatives include OpenFreeMap
+Positron, Bright, Dark, and Fiord, plus the attributed 2016 EOX Satellite
+Context mosaic.
 
-Save a basemap visibly in the map outline:
+Graph administrators can open **Settings → Roam Depot → Roam Map → Basemap
+catalog** to add a complete MapLibre style URL, an attributed raster tile
+template, or the optional MapTiler shortcut. Catalog settings sync with the
+graph: collaborators may be able to read configured URLs and browser keys, and
+providers receive those values in browser requests. Use restricted public
+browser keys, not secrets.
 
-```text
-{{map}}
-  map/basemap:: OpenFreeMap Dark
-  [[Port Louis]]
-```
+Opening a map loads styles, sprites, fonts, and tiles from its selected
+providers. Roam Map keeps required provider and OpenStreetMap attribution in
+the map. Reading pages, native queries, and Datalog results from the current
+graph does not contact an external search service.
 
-A graph administrator can open **Basemap catalog** in the Roam Map settings and
-add either a complete MapLibre style URL or an attributed raster tile template.
-Configure the URL once, give it a readable name, and use that name from any map.
-The optional MapTiler shortcut adds `MapTiler Satellite` and `MapTiler Hybrid`
-without making MapTiler the only configurable provider.
+## Advanced maps
 
-Roam Map preserves provider and OpenStreetMap attribution behind the map's
-standard compact ⓘ control, one click away at the bottom-right corner.
+Roam Map also supports data-driven MapLibre layers, image markers, reusable
+marker cards, and custom results lists. These are graph-authored code and
+presentation resources rather than extra location fields.
 
-Extension settings are graph-synced, so configured URLs and browser keys are
-collaborator-visible public configuration, not secrets. The
-[working external-style example](https://github.com/MaskyS/roam-map/blob/main/examples.md#external-maplibre-style-url)
-uses a real URL that Roam Map does not provide. The
-[customization reference](https://github.com/MaskyS/roam-map/blob/main/customization.md#basemaps-names-resolve-to-maplibre-styles)
-explains style URLs, raster templates, attribution, credentials, and CORS.
+- [Open the tested examples](https://github.com/MaskyS/roam-map/blob/main/examples.md)
+- [Read the complete customization reference](https://github.com/MaskyS/roam-map/blob/main/customization.md)
 
-## Presentation and customization
+Enable Roam's custom-components setting before using graph-authored JavaScript,
+JSX, or Clojure components, and treat that code as trusted graph content.
 
-Hover over a map to reveal its small resize grip just outside the bottom-right
-corner. Drag it to change the map's maximum width and height. Roam Map saves both dimensions
-atomically in a normal child such as
-`map/size:: 900 × 480`; **Reset map size** restores responsive defaults. A
-saved maximum width never exceeds the space Roam provides, and camera movement
-is not saved.
+## Current limits
 
-Roam Map exposes every suitable scalar source attribute to the compiled GeoJSON
-feature under its readable attribute title. Advanced maps can use ordinary,
-validated MapLibre layers over the stable source ID `roam-map-features`.
+- Maps render points; lines, polygons, clustering, and arbitrary authored
+  GeoJSON sources are separate capabilities.
+- Dynamic membership comes from native queries or fenced Datalog, not search
+  components, saved `:q` components, or `{{map: ...}}` arguments.
+- Roam Map does not geocode, classify, or rename sources. Use Roam Places or
+  edit the location page directly.
 
-Add each layer as a readable `MapLibre layer` block with exactly one ordinary
-code-block child containing strict JSON:
-
-````text
-MapLibre layer
-  ```json
-  {
-    "id": "large-places",
-    "type": "circle",
-    "source": "roam-map-features",
-    "paint": {
-      "circle-radius": 10,
-      "circle-color": "#6f42c1"
-    }
-  }
-  ```
-````
-
-The default marker card is replaceable with arbitrary user-authored
-`roam/render` code:
-
-````text
-Marker click
-  ```jsx
-  function customMarkerClick({ args }) {
-    const context = JSON.parse(decodeURIComponent(args[1]));
-    return <div>{context.feature.properties["roam/label"]}</div>;
-  }
-  ```
-````
-
-`Marker click` may instead contain one exact block reference to reusable code.
-JavaScript, JSX, and Clojure code blocks are accepted. Custom code can render
-any interface, reuse Roam Map's stock Blueprint components, query additional
-graph data through `entityUid`, run an effect such as sound or confetti, or
-return `null`.
-
-The versioned `window.RoamMap.components` namespace currently exports:
-
-- `MarkerPopover`
-- `MarkerCard`
-- `MarkerCardDetails`
-- `MarkerCardActions`
-- `MapResultsPanel`
-- `MapResultItem`
-
-The stock fallback uses those same components. Roam Map invokes custom code
-through Roam's documented `renderString` API and calls `unmountNode` during
-cleanup. Enable Roam's custom-components setting before using graph-authored
-code, and treat that code with the same trust as any other `roam/render`
-component.
-
-See the [tested popup recipe](https://github.com/MaskyS/roam-map/blob/main/examples.md#custom-effort-popup)
-for the complete click context and a human-readable JSX component that reads
-`Image::`, `Description::`, and `URL::` through the Roam Alpha API.
-
-## Current scope
-
-Implemented source membership is deliberately explicit: ordinary descendant
-page references, bare `geo:` blocks, named blocks with a `Coordinates`
-attribute, result pages or the containing pages of result blocks from a
-direct-child native query, and exact page or block UIDs returned by a
-direct-child fenced Datalog query. Either dynamic definition may be reused
-through one exact direct-child block reference. Inline arguments such as
-`{{map: all}}`, search components, saved `:q` components, reusable source
-outlines, arbitrary GeoJSON sources, lines, polygons, clustering, and saved
-camera views remain separate work.
-
-Roam Map owns aggregation and rendering. Roam remains the editor and durable
-source of truth, and Roam Places remains responsible for capturing locations.
-Rendering never rewrites source blocks or location pages as a side effect.
-
-## Help, design, and development
+## Help and development
 
 - [Tested examples](https://github.com/MaskyS/roam-map/blob/main/examples.md)
 - [Customization reference](https://github.com/MaskyS/roam-map/blob/main/customization.md)
-- [Presentation and MapLibre contract](https://github.com/MaskyS/roam-map/blob/main/PRESENTATION.md)
-- [Design notes](https://github.com/MaskyS/roam-map/blob/main/DESIGN.md)
-- [Architecture and lifecycle](https://github.com/MaskyS/roam-map/blob/main/ARCHITECTURE.md)
 - [Issues and planned work](https://github.com/MaskyS/roam-map/issues)
 
 For local development:
@@ -232,5 +144,3 @@ npm run check
 ```
 
 Load the repository through **Settings → Roam Depot → Load local folder**.
-Roam supplies React 18.2.0 and Blueprint; the build externalizes those globals.
-MapLibre GL JS 5.24.0 is pinned and bundled once.
