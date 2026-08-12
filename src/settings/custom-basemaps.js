@@ -209,6 +209,21 @@ export function prepareCustomBasemap(raw, { strict = true, existing = [] } = {})
   };
 }
 
+const HTML_ESCAPES = Object.freeze({
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+});
+
+// MapLibre's AttributionControl renders attribution with innerHTML, and this
+// value syncs graph-wide through extension settings, so it must never carry
+// markup written by another graph member.
+export function escapeAttributionHtml(text) {
+  return String(text).replace(/[&<>"']/g, (character) => HTML_ESCAPES[character]);
+}
+
 export function customRasterStyle(configuration) {
   return {
     version: 8,
@@ -220,7 +235,7 @@ export function customRasterStyle(configuration) {
         minzoom: configuration.minZoom,
         maxzoom: configuration.maxZoom,
         scheme: configuration.scheme,
-        attribution: configuration.attribution,
+        attribution: escapeAttributionHtml(configuration.attribution),
       },
     },
     layers: [

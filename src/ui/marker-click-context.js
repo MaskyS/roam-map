@@ -51,7 +51,11 @@ export function createMarkerClickContext({
 }
 
 export function encodeMarkerClickContext(context) {
-  return encodeURIComponent(JSON.stringify(context));
+  // encodeURIComponent leaves parentheses alone, which would let a title
+  // containing ((uid)) survive into the {{roam/render}} argument below.
+  return encodeURIComponent(JSON.stringify(context)).replace(/[()]/g, (character) =>
+    character === "(" ? "%28" : "%29",
+  );
 }
 
 export function markerClickInvocation(codeBlockUid, context) {

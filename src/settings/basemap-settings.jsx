@@ -456,10 +456,12 @@ export function BasemapSettingsEditor({ registry }) {
   }
 
   async function removeCustomBasemap(configuration) {
-    const confirmed = window.confirm?.(
-      `Remove “${configuration.name}” from the Roam Map basemap catalog? Maps using that name will fall back to OpenFreeMap Liberty.`,
-    );
-    if (confirmed === false) return;
+    const confirmed =
+      typeof window.confirm === "function" &&
+      window.confirm(
+        `Remove “${configuration.name}” from the Roam Map basemap catalog? Maps using that name will fall back to OpenFreeMap Liberty.`,
+      );
+    if (!confirmed) return;
     const removed = await run(
       `remove:${configuration.id}`,
       () => registry.removeCustomBasemap(configuration.id),
