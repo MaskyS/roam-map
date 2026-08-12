@@ -5,17 +5,19 @@ places directly, collect them with a native query, or return exact page and
 block UIDs with Datalog. The map stays connected to its Roam sources and opens
 them in the right sidebar when you need the underlying notes.
 
-![A Roam Map showing five places, its toolbar, a marker card, and the source outline](https://raw.githubusercontent.com/MaskyS/roam-map/main/assets/roam-map-basic-example.webp)
+**Install [Roam Places](https://github.com/MaskyS/roam-places) alongside Roam
+Map.** Roam Map renders location data; Roam Places is the recommended way to
+create it. Its `/Place` command searches your graph and online place services,
+then saves the coordinates Roam Map reads — no attribute editing by hand.
+Everything below works without it, but every step is easier with it.
 
-Need to find or create location pages first? [Roam Places](https://github.com/MaskyS/roam-places)
-searches your graph and online place services, then saves the location data
-Roam Map reads. Roam Places handles location capture; Roam Map handles
-aggregation and persistent map rendering.
+![A Roam Map showing five places, its toolbar, a marker card, and the source outline](https://raw.githubusercontent.com/MaskyS/roam-map/main/assets/roam-map-basic-example.webp)
 
 ## Create your first map
 
-1. Give each place page a `Coordinates` attribute. Roam Places can do this for
-   you, or you can add one directly:
+1. Give each place page a `Coordinates` attribute. The quickest way is the
+   Roam Places `/Place` command, which saves this while you write. To add one
+   by hand instead:
 
    ```text
    roam/meta::
