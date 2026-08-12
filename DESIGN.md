@@ -153,13 +153,15 @@ contract.
 | Page references | Implemented | Explicit page-backed locations |
 | Bare `geo:` URI | Implemented | An unnamed point whose source block is its identity |
 | Named block with `Coordinates:: geo:…` | Implemented | A named point whose parent block is its identity |
-| Block reference | Proposed | Reusable source outline, expanded with cycle detection |
-| Inline native query | Proposed | `roamAlphaAPI.data.roamQuery({query})` |
-| Child native query | Proposed | `roamAlphaAPI.data.roamQuery({uid})` |
-| Search component | Proposed | `roamAlphaAPI.data.async.search(...)` |
-| `:q` block | Proposed | Datalog with an explicit UID-producing result contract |
+| Exact block reference to a dynamic definition | Implemented | Reuse one saved native query or fenced Datalog definition |
+| Reusable source outline | Not planned | Keep curated references local, or reuse a saved query or Datalog definition |
+| Inline native query | Not planned | Use an ordinary child native query instead |
+| Child native query | Implemented | `roamAlphaAPI.data.roamQuery({uid})` with containing-page block results |
+| Search component | Not planned | Native query and fenced Datalog cover dynamic membership |
+| Fenced Datalog code block | Implemented | Frontend Datalog with a flat or one-column UID result contract |
+| Saved `:q` component | Not supported | The API does not replay its rendered block context by UID |
 | GeoJSON code block | Proposed | Validated external features with source-derived identity |
-| `{{map: all}}` | Proposed | Explicitly load the graph's known locations |
+| `{{map: all}}` | Not planned | Use an explicit saved query or fenced Datalog scan |
 
 Plain parent blocks with recognized source descendants can become named map
 layers. One page may belong to multiple layers without producing duplicate
@@ -168,16 +170,16 @@ features.
 ## Query-result normalization
 
 - A page result contributes itself when it has location data.
-- A block result remains a typed block input. The first query adapter reports it
-  as unsupported rather than guessing which place it represents.
-- A later source-level result mode may explicitly select the block's owning
-  page, its directly referenced pages, or both. The default must be chosen from
-  live fixtures; owner and reference candidates are not silently combined.
-- Query and search hits are not recursively expanded.
-- Explicit block-reference collection sources may recursively expand their
-  referenced outline.
-- Raw `:q` sources should return `?uid`, `?page-uid`, or `?block-uid`; arbitrary
-  strings and entity IDs are not guessed.
+- A native-query block result contributes its containing page. The result block
+  UID remains provenance; pages referenced from its text are never inferred as
+  map membership.
+- When the desired entity differs from that containing page, fenced Datalog
+  returns the exact page or block UID explicitly.
+- Query hits and arbitrary block references are not recursively expanded.
+- One exact direct-child block reference may reuse a native-query or
+  fenced-Datalog definition.
+- Fenced Datalog accepts only a flat UID collection or one-column UID relation;
+  arbitrary strings, entity IDs, maps, and multi-column tuples are not guessed.
 
 ## Geographic feature model
 

@@ -63,6 +63,7 @@
 
 .rrm-count strong {
   color: var(--bc-main-text, #182026);
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 
@@ -79,8 +80,14 @@
   gap: 2px;
 }
 
-.rrm-actions .bp3-button {
-  color: #5c7080;
+.rrm-actions .bp3-button,
+.rrm-actions .bp3-button .bp3-icon {
+  color: #738694;
+}
+
+.rrm-actions .bp3-icon > svg {
+  width: 14px;
+  height: 14px;
 }
 
 .rrm-basemap {
@@ -88,7 +95,7 @@
   display: inline-flex;
   align-items: center;
   height: 24px;
-  margin-right: 2px;
+  margin: 0 2px 0 0;
   border-radius: 3px;
   color: #5c7080;
 }

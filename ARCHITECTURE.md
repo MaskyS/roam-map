@@ -324,11 +324,12 @@ Use the two representations together:
 - do not treat every reference in a query component as a direct page source.
   The query parser claims that block before the direct-reference parser runs.
 
-[Block references](https://roamdocs.fyi/help/block-references) are a natural
-way to reuse source or style outlines. Expansion should occur only in an
-explicit source or style context, retain the referencing block in provenance,
-and detect cycles by block UID. An arbitrary reference elsewhere in a map
-definition should remain an ordinary input, not trigger recursive expansion.
+[Block references](https://roamdocs.fyi/help/block-references) are used
+narrowly. One exact direct-child reference may reuse a saved native-query or
+fenced-Datalog definition, and Marker click or Results list may reference an
+exact code block. Roam Map does not recursively expand arbitrary referenced
+source or style outlines; doing so would introduce hidden membership, cycles,
+and depth rules. Ordinary references elsewhere remain ordinary inputs.
 
 ### Current and compatibility attributes
 
@@ -658,39 +659,28 @@ and properties before creating records. It should not execute JavaScript. Raw
 GeoJSON is valuable, but it should follow the direct-page and direct-coordinate
 proofs rather than delay them.
 
-### Queries remain ordinary child components
+### Dynamic membership remains in ordinary child blocks
 
 ```text
 {{map}}
-  Cafes
-    {{[[query]]: {and: [[Cafe]] {not: [[Closed]]}}}}
-  Coffee search
-    {{[[search]]: coffee Mauritius}}
+  {{[[query]]: {and: [[Cafe]] {not: [[Closed]]}}}}
 ```
 
-The group blocks supply layer membership and a readable label. The query block
-is executed with `roamQuery({ uid })` so that its stored native settings can be
-respected where the API supports them. Search text is passed to
-`data.async.search`. Neither adapter reads the displayed results from the DOM.
+The query block is executed with `roamQuery({ uid })` so that its stored native
+settings can be respected where the API supports them. Roam Map never reads
+the displayed query results from the DOM. A fenced Datalog direct child is the
+advanced alternative when the map needs exact page or block UIDs.
 
-`{{map: {and: ...}}}` can remain shorthand for one native-query source. Its
-balanced braces require a real delimiter scanner; a single regular expression
-will fail on nested clauses.
+Search is not a planned source adapter, and `{{map: all}}` is not a planned
+graph-wide shortcut. `{{map: {and: ...}}}` remains recoverable component text
+but is not executed; authors use an ordinary saved query child instead.
 
-### Reusable outlines require an explicit context
+### Reusable source outlines are not expanded
 
-```text
-{{map}}
-  Sources
-    ((source-outline-uid))
-  Style
-    ((style-outline-uid))
-```
-
-The surrounding block tells the parser whether to expand the reference as
-sources or options. Expansion preserves origin information and detects cycles.
-This is less surprising than recursively expanding every block reference found
-under a map.
+Keep a curated list of page references local to each map. When membership needs
+to be shared or computed, reference one saved native query or fenced Datalog
+definition as an exact direct child. Roam Map does not recursively traverse an
+arbitrary referenced outline as a source collection.
 
 ### Options should stay readable
 
@@ -736,9 +726,11 @@ The precedence is graph default, referenced preset, map, group/layer, then
 item. “Later wins” applies only when that option's `inherit` function says so.
 Lists, filters, and attribution may need accumulation instead.
 
-An explicit Save view action may write a namespaced view outline under the map
-block. Ordinary panning and zooming stay ephemeral, and a source refresh must
-not reset the camera after the user has started navigating.
+Roam Map does not persist camera state. Center, zoom, bearing, and pitch belong
+to the visible map instance, ordinary panning and zooming stay ephemeral, and a
+source refresh must not reset the camera after the user has started navigating.
+Durable presentation is limited to explicit readable options such as
+`map/size` and `map/basemap`; there is no **Save view** action.
 
 ### Projecting feature data for native presentation
 
@@ -863,15 +855,13 @@ entity a map should infer from a block result. Several plausible policies exist:
 - map both;
 - accept only page UIDs and report all other results as unsupported.
 
-The current design's “owner plus direct references” rule is broad and may map
-unrelated places. A block on a located page can also reference another located
-page, and native query matching may inherit references from ancestors that do
-not appear directly in the result string.
+The implemented native-query rule keeps a returned page as itself and maps a
+returned block through its containing page. It retains the result block UID as
+provenance and never combines the owner with directly referenced pages. When a
+different entity is intended, fenced Datalog must return that exact UID.
 
-The first query adapter should retain the raw result entity and expose counts
-for each normalization step. A source-level result mode can be added after live
-fixtures establish a useful default. Until then, do not silently combine owner
-and reference candidates. Diagnostics should distinguish:
+The adapter retains raw result identity and exposes counts for each
+normalization step. Diagnostics distinguish:
 
 - returned entities;
 - page candidates;
@@ -880,9 +870,10 @@ and reference candidates. Diagnostics should distinguish:
 - candidates skipped for missing or invalid location data;
 - truncation and query failure.
 
-Raw `:q` should require an explicit UID-producing contract such as `?uid`,
-`?page-uid`, or `?block-uid`. Do not guess from arbitrary strings or persist
-numeric entity IDs.
+Fenced Datalog requires a flat UID collection or one-column UID relation. It
+does not guess from arbitrary strings or persist numeric entity IDs. Contextual
+`current/*` symbols remain unsupported because copied query text is executed
+outside the rendered `:q` block; explicit rejection is tracked in issue #27.
 
 ## State, invalidation, and view ownership
 
@@ -1017,15 +1008,14 @@ The first-loop issues were implemented together on
 7. [#7](https://github.com/MaskyS/roam-map/issues/7) exposes counts,
    diagnostics, refresh, fit, and page navigation.
 
-The direct-coordinate follow-up now implements bare `geo:` blocks and named
-blocks with `Coordinates` attributes. Each retains its own block UID and opens
-that block in the right sidebar. The next source work can proceed to reusable outlines
-([#8](https://github.com/MaskyS/roam-map/issues/8)), native queries
-([#9](https://github.com/MaskyS/roam-map/issues/9)), search
-([#10](https://github.com/MaskyS/roam-map/issues/10)), and explicit UID-producing
-`:q` ([#11](https://github.com/MaskyS/roam-map/issues/11)). Named layers,
-geometry, options, and saved views should follow observed needs from those
-sources rather than precede the product loop.
+The direct-coordinate follow-up implements bare `geo:` blocks and named blocks
+with `Coordinates` attributes. Each retains its own block UID and opens that
+block in the right sidebar. Saved native queries and fenced UID-producing
+Datalog are implemented dynamic inputs; search and `{{map: all}}` are not
+planned because those two inputs already cover dynamic membership. Reusable
+source outlines are also not planned; local references and reusable query or
+Datalog definitions cover the intended authoring cases without recursive
+reference semantics.
 
 The resulting vertical slice now includes the lifecycle and build harness,
 current and compatibility location resolution, ordered descendant page and
@@ -1036,11 +1026,14 @@ layers and image assets, named basemaps, a persistent point renderer, focused
 pull watches with stale-generation guards, and visible counts, diagnostics,
 refresh, fit, coincident-feature selection, arbitrary user-authored
 `roam/render` marker-click components, a reusable Blueprint stock card, and
-right-sidebar page-or-block navigation. Marker-click code receives a versioned,
-serialized event and feature snapshot and is mounted and unmounted through
-Roam's documented component API; clicks never write transient UI state to the
-graph. Query, search, and `:q` inputs remain deliberately unimplemented; the
-parser reports an inline argument instead of pretending to execute it.
+right-sidebar page-or-block navigation. It also includes saved native-query and
+fenced-Datalog membership, a synchronized stock or user-authored results list,
+durable `map/size`, and graph-wide custom basemap catalog entries. Marker-click
+code receives a versioned, serialized event and feature snapshot and is mounted
+and unmounted through Roam's documented component API; clicks never write
+transient UI state to the graph. Search, saved `:q` components, and
+`{{map: all}}` remain deliberately unsupported rather than sharing a guessed
+adapter contract.
 
 Raw GeoJSON sources and a public contribution API deserve separate later
 issues. Validated native layer resources are implemented over the compiled
@@ -1108,13 +1101,11 @@ are:
 7. Test `roamQuery({ uid })` with default and explicit limits, grouping,
    nesting, sorting, and the native Reactive setting. Determine which settings
    affect returned data rather than only display.
-8. Test search component spellings and confirm that the query string can be
-   recovered without relying on internal `:block/props`.
-9. Test each relevant `current/*` symbol when `:q` text is executed through the
-   frontend API away from its rendered block.
-10. Extend the successful Roam Desktop basemap and attribution test to the web
-    client and supported mobile clients; verify resize and live
-    `map.remove()` cleanup in each environment.
+8. Add the explicit `current/*` rejection tracked in issue #27 for fenced
+   Datalog executed away from a rendered `:q` block.
+9. Extend the successful Roam Desktop basemap and attribution test to the web
+   client and supported mobile clients; verify resize and live
+   `map.remove()` cleanup in each environment.
 
 ## Primary references
 

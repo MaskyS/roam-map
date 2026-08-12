@@ -42,12 +42,15 @@ location entities while rendering.
 | HTTP(S) image Markdown in an attribute | Supported | Register square and circular runtime image variants |
 | `Marker click` plus inline code or one block reference | Supported | Replace the stock marker behavior with `roam/render` code |
 | `Results list` plus inline code or one block reference | Supported | Replace the stock results list with `roam/render` code |
+| Default synchronized results list | Supported | Open the text-first source list from the place-count control |
 | Raw style or tile URL in `map/basemap` | **Not supported** | Configure it once under a name; unknown text falls back to Liberty |
 | Inline complete style JSON or arbitrary map-local sources | **Not supported yet** | Requires a distinct validated resource surface |
-| Search components, saved `:q` components, or reusable source outlines | **Not supported yet** | Search and `:q` do not share the implemented saved-query/code-block contract |
+| Search components | **Not planned** | Use a saved native query or fenced Datalog instead |
+| Saved `:q` components | **Not supported** | Put the Datalog text in a supported fenced direct child instead |
+| Reusable source outlines | **Not planned** | Keep curated page references local, or reference one saved query or Datalog definition |
 | Raw Datalog or source expressions inside `{{map: ...}}` | **Not supported** | Put a supported definition in a child block instead |
-| Lines, polygons, clustering, or saved camera state | **Not supported yet** | Separate rendering and view capabilities |
-| Default synchronized side results list | **Planned** | Tracked in [issue #24](https://github.com/MaskyS/roam-map/issues/24) |
+| Lines, polygons, or clustering | **Not supported yet** | Separate rendering capabilities |
+| Saved camera state | **Not planned** | Center, zoom, bearing, and pitch remain transient per visible map instance |
 
 If a form is marked unsupported, do not place it in a working example or teach
 the compiler to guess what the author meant.
@@ -92,8 +95,10 @@ references is ambiguous and produces a diagnostic. If a block has its own
 location is the source for that block.
 
 `{{[[map]]}}` also mounts, but Roam creates a real `[[map]]` page reference as
-part of that spelling. `{{map: all}}` is retained and reported but is not an
-implemented source adapter.
+part of that spelling. `{{map: all}}` is retained and reported but is not a
+planned source adapter. Use an explicit saved query or fenced Datalog when a
+map should scan broadly, so the potentially expensive membership rule remains
+visible and editable in Roam.
 
 ### Saved native queries: containing pages
 
@@ -178,6 +183,13 @@ block UIDs. A returned block maps when it is a bare `geo:` block or has the
 same supported location attributes as any other block source, so this contract
 already accommodates block-level inputs without inventing synthetic pages.
 
+Roam-specific `current/*` symbols are not supported in a fenced Datalog source.
+Roam Map executes the copied query text through the frontend API rather than
+inside a rendered native `:q` component, so those symbols do not have the
+original block context. Until the explicit rejection tracked in
+[issue #27](https://github.com/MaskyS/roam-map/issues/27) lands, authors must not
+use contextual `current/*` symbols in map Datalog definitions.
+
 Either dynamic definition can be reused with one exact, direct-child block
 reference:
 
@@ -204,7 +216,8 @@ Both adapters query only the currently loaded Roam graph. They make no new
 network request and do not write to query blocks, result entities, or location
 pages. Saved `:q` components are not accepted in this first version because the
 documented API executes Datalog text directly but does not document replaying a
-saved `:q` component by UID. Search remains a separate future adapter.
+saved `:q` component by UID. Search is not a planned adapter; native queries and
+fenced Datalog cover the supported dynamic-membership cases.
 
 ## Map size: responsive by default, durable when resized
 
@@ -232,7 +245,9 @@ This value belongs to the map definition block. If that definition is shown
 by block reference in several places, the saved size is shared, while each
 visible React and MapLibre instance still owns its own transient drag state and
 resize observer. Roam Map does not use Roam's private image-size metadata and
-does not save pan, zoom, bearing, or pitch as a side effect of resizing.
+does not save pan, zoom, bearing, or pitch as a side effect of resizing. Camera
+state is deliberately transient; there is no **Save view** action or durable
+camera schema.
 
 ## Feature data: what each source contributes
 
@@ -637,7 +652,9 @@ Clicking the place count in the map bar opens a results list above it: a
 compact, text-first panel with one row per source entity in compiled outline
 order. Each row shows the source label, the address when available, a clamped
 `Description` value when the entity exposes one, and an **Open in sidebar**
-action. Unmapped sources stay in the list with an `unmapped` tag. The stock list
+action. Unmapped sources stay in the list with an `unmapped` tag. Richer
+per-row explanations and source links are tracked in
+[#18](https://github.com/MaskyS/roam-map/issues/18). The stock list
 never loads images.
 
 Selecting a row closes any open marker UI, highlights the place, and focuses it

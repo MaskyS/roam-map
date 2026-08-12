@@ -120,6 +120,10 @@ for a one-column UID relation. A query that returns titles, entity IDs, maps,
 or several columns is deliberately rejected. The same source may instead be
 saved elsewhere and included as one direct-child block reference.
 
+Do not use Roam-specific `current/*` symbols in these fenced definitions. They
+depend on a rendered `:q` component context, while Roam Map executes fenced
+Datalog text directly through the frontend API.
+
 The native fixture keeps returned pages and turns returned blocks into their
 containing pages. It does not infer which referenced page inside a result block
 might be the intended place. Datalog is therefore the clearer choice when the
